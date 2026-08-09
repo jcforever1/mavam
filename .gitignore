@@ -36,3 +36,12 @@ $HOME/state/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Vendor — keep kronos in-tree (MIT licensed, needed for engine to work)
+# vendor/ is intentionally committed; do not ignore.
+
+# Paper-trade log + sweep result files
+examples/results/*.log
+!examples/results/sweep-*.log
+!examples/results/paper-replay-*.log
+!examples/results/kronos-compare-*.log

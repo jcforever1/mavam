@@ -63,6 +63,8 @@ def main(argv: Sequence[str]) -> int:
         return _cmd_verify(rest)
     if cmd == "predict":
         return _cmd_predict(rest)
+    if cmd == "paper":
+        return _cmd_paper(rest)
     if cmd in ("-h", "--help", "help"):
         _print_usage()
         return EXIT_OK
@@ -358,6 +360,231 @@ def _cmd_predict(args: list[str]) -> int:
     return EXIT_OK
 
 
+# ── paper ────────────────────────────────────────────────────────────
+
+
+def _cmd_paper(args: list[str]) -> int:
+    """Dispatch `rudra-intraday paper <subcommand> ...`."""
+    if not args:
+        print(
+            "usage: rudra-intraday paper <log|report|replay> ...",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    sub = args[0]
+    rest = args[1:]
+    if sub == "log":
+        return _cmd_paper_log(rest)
+    if sub == "report":
+        return _cmd_paper_report(rest)
+    if sub == "replay":
+        return _cmd_paper_replay(rest)
+    print(f"rudra-intraday paper: unknown subcommand {sub!r}", file=sys.stderr)
+    return EXIT_USAGE
+
+
+def _cmd_paper_log(args: list[str]) -> int:
+    """Run a strategy and append a record to today's paper-trade log.
+
+    `rudra-intraday paper log <config.toml>`
+    """
+    if len(args) != 1:
+        print("usage: rudra-intraday paper log <config.toml>", file=sys.stderr)
+        return EXIT_USAGE
+    config_path = args[0]
+    try:
+        config = load_config_from_argv([config_path])
+    except (ArgvError, TomlParseError, SchemaViolation, FileNotFoundError) as e:
+        print(f"config error: {e}", file=sys.stderr)
+        return EXIT_CONFIG
+
+    # Determine ticker from config
+    ticker = ""
+    if config.data.ticker is not None:
+        ticker = config.data.ticker.upper()
+    elif config.data.csv is not None:
+        ticker = config.data.csv.stem.upper()
+    elif config.data.chart is not None:
+        ticker = str(config.data.chart.get("ticker", "")).upper()
+    elif config.data.tradingview is not None:
+        ticker = str(config.data.tradingview.get("ticker", "")).upper()
+    if not ticker:
+        print(
+            "config error: paper log needs a ticker (csv, ticker, chart, or tradingview)",
+            file=sys.stderr,
+        )
+        return EXIT_CONFIG
+
+    # Reuse the run pipeline by calling _cmd_run, but capture the JSON output
+    import io
+    import contextlib
+    buf = io.StringIO()
+    rc = -1
+    with contextlib.redirect_stdout(buf):
+        rc = _cmd_run([config_path])
+    if rc != EXIT_OK:
+        print(buf.getvalue(), file=sys.stderr)
+        return rc
+    try:
+        payload = json.loads(buf.getvalue().strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        print(
+            "paper log: could not parse run output",
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
+
+    from .papertrade import PaperLogRecord, append_record
+    from .signal_types import now_iso
+    ts_unix = int(payload.get("timestamp_unix", time.time()))
+    rec = PaperLogRecord(
+        ts_unix=ts_unix,
+        ts_iso=payload.get("timestamp_iso", now_iso(ts_unix)),
+        ticker=ticker,
+        action=str(payload.get("action", "HOLD")),
+        entry_price=float(payload.get("entry_price") or 0.0),
+        stop_loss=payload.get("stop_loss"),
+        take_profit=payload.get("take_profit"),
+        confidence=float(payload.get("confidence", 0.0)),
+        reason=str(payload.get("reason", "")),
+        config_sha=str(payload.get("config_sha256", config.config_sha256)),
+        is_decide_no=bool(payload.get("is_decide_no", False)),
+        decide_no_reasons=list(payload.get("decide_no_reasons", [])),
+        source="run",
+    )
+    path = append_record(rec)
+    print(f"paper log: appended {ticker} {rec.action} @ {rec.entry_price} → {path}")
+    return EXIT_OK
+
+
+def _cmd_paper_report(args: list[str]) -> int:
+    """Read the log and print realized P&L for a ticker.
+
+    `rudra-intraday paper report <ticker> [--since 30d] [--max-hold 200]`
+    """
+    if not args:
+        print("usage: rudra-intraday paper report <ticker> [--since Nd] [--max-hold N]", file=sys.stderr)
+        return EXIT_USAGE
+    ticker = args[0].upper()
+    since_day = None
+    max_hold = 200
+    i = 1
+    while i < len(args):
+        if args[i] == "--since" and i + 1 < len(args):
+            n_str = args[i + 1]
+            if n_str.endswith("d"):
+                days = int(n_str[:-1])
+                from datetime import datetime, timedelta, timezone
+                cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+                since_day = cutoff.strftime("%Y-%m-%d")
+            i += 2
+        elif args[i] == "--max-hold" and i + 1 < len(args):
+            max_hold = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
+
+    from .papertrade import read_records, compute_realized_pnl
+    from .data import YFinanceConfig, fetch_yfinance_bars
+    records = read_records(since_day=since_day, ticker=ticker)
+    if not records:
+        print(f"paper report: no records for {ticker} (since {since_day or 'all'})")
+        return EXIT_OK
+
+    # Pull subsequent bars from yfinance (best-effort; if missing, skip)
+    yf_config = YFinanceConfig(
+        ticker=ticker, period="60d", interval="5m", stale_after_seconds=0,
+    )
+    bars = fetch_yfinance_bars(yf_config)
+    subsequent: dict = {ticker: []}
+    if bars and records:
+        first_ts = records[0].ts_unix
+        subsequent[ticker] = [b for b in bars if b.timestamp_unix > first_ts]
+
+    pnl = compute_realized_pnl(records, subsequent, max_hold_bars=max_hold)
+    print(
+        f"paper report: {ticker} (since {since_day or 'all'}, max_hold={max_hold})"
+    )
+    print(f"  records:     {len(records)}")
+    print(f"  closed:      {pnl.n_trades}")
+    print(f"  skipped:     {pnl.skipped}")
+    print(f"  total PnL:   ${pnl.total_pnl:+.2f}")
+    print(f"  avg PnL:     ${pnl.avg_pnl:+.2f}")
+    print(f"  win rate:    {pnl.win_rate * 100:.1f}%")
+    if pnl.closed:
+        by_reason: dict = {}
+        for t in pnl.closed:
+            by_reason.setdefault(t.exit_reason, 0)
+            by_reason[t.exit_reason] += 1
+        print(f"  exits:       " + ", ".join(
+            f"{k}={v}" for k, v in sorted(by_reason.items())
+        ))
+        avg_hold = sum(t.bars_held for t in pnl.closed) / len(pnl.closed)
+        print(f"  avg hold:    {avg_hold:.1f} bars")
+    return EXIT_OK
+
+
+def _cmd_paper_replay(args: list[str]) -> int:
+    """Replay a strategy historically and report the realized P&L.
+
+    `rudra-intraday paper replay <ticker> --config <config.toml>
+                                 [--period 60d] [--max-hold 200]`
+    """
+    ticker = ""
+    config_path = ""
+    period = "60d"
+    max_hold = 200
+    i = 0
+    while i < len(args):
+        if args[i] == "--config" and i + 1 < len(args):
+            config_path = args[i + 1]
+            i += 2
+        elif args[i] == "--period" and i + 1 < len(args):
+            period = args[i + 1]
+            i += 2
+        elif args[i] == "--max-hold" and i + 1 < len(args):
+            max_hold = int(args[i + 1])
+            i += 2
+        else:
+            if not ticker:
+                ticker = args[i].upper()
+            i += 1
+    if not ticker or not config_path:
+        print(
+            "usage: rudra-intraday paper replay <ticker> --config <config.toml> "
+            "[--period 60d] [--max-hold 200]",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    from .papertrade import replay_historical_signals
+    records, pnl = replay_historical_signals(
+        ticker, config_path=config_path, period=period, max_hold_bars=max_hold,
+    )
+    print(
+        f"paper replay: {ticker} over {period}, config {config_path}, max_hold={max_hold}"
+    )
+    print(f"  signals:     {len(records)}")
+    print(f"  closed:      {pnl.n_trades}")
+    print(f"  skipped:     {pnl.skipped}")
+    print(f"  total PnL:   ${pnl.total_pnl:+.2f}")
+    print(f"  avg PnL:     ${pnl.avg_pnl:+.2f}")
+    print(f"  win rate:    {pnl.win_rate * 100:.1f}%")
+    if pnl.closed:
+        avg_hold = sum(t.bars_held for t in pnl.closed) / len(pnl.closed)
+        print(f"  avg hold:    {avg_hold:.1f} bars")
+        # Show the last 5 trades
+        print("  last 5 trades:")
+        for t in pnl.closed[-5:]:
+            print(
+                f"    {t.record.ts_iso[:10]} "
+                f"{t.record.action} @ {t.record.entry_price:.2f} "
+                f"→ exit {t.exit_reason} @ {t.exit_price:.2f} "
+                f"PnL ${t.pnl:+.2f} ({t.bars_held} bars)"
+            )
+    return EXIT_OK
+
+
 # ── helpers ──────────────────────────────────────────────────────────
 
 
@@ -370,12 +597,17 @@ Usage:
     rudra-intraday explain <hash>          Render a past signal as text
     rudra-intraday verify <hash>           Re-canonicalize and assert equality
     rudra-intraday predict <data.csv>      One-shot Kronos inference (optional)
+    rudra-intraday paper log <config>      Run + append a paper-trade record
+    rudra-intraday paper report <ticker>   Compute realized P&L from the log
+    rudra-intraday paper replay <ticker>   Replay a strategy historically
+                                           --config <config.toml>
 
 Options:
     -h, --help       Show this help
     -v, --version    Show version
 
 State directory: $HOME/state/<config_sha256>/signals/
+Paper-trade log: $HOME/.local/state/mavam/paperlog/
 """,
         file=sys.stderr,
     )

@@ -30,6 +30,7 @@ setup(
     install_requires=[
         "click>=8.0.0",
         "pydantic>=2.0.0",
+        "tomlkit>=0.13.0",
     ],
     # Optional predictor + TradingView integration — installed only if user opts in
     extras_require={
