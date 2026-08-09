@@ -1,0 +1,6 @@
+include README.md
+recursive-include rudra_intraday_engine/data *.json *.csv
+recursive-include rudra_intraday_engine/examples/strategies *.toml
+recursive-include rudra_intraday_engine/skills *.md
+exclude *.pyc
+exclude __pycache__

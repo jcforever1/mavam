@@ -1,0 +1,18 @@
+# rudra-intraday-engine — run config
+#
+# This file ties together:
+#   - the Adjudicator policy (which trades the book engine emits)
+#   - the data source (CSV in this case)
+#   - optional predictor settings (Kronos — disabled by default in v1)
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[predictor]
+enabled = false
+model_version = "kronos-0.6.0"
+min_confidence = 0.65
+
+[data]
+csv = "../data/spy-trend-up-2026-08-10.csv"
+lookback_days = 1

@@ -1,0 +1,65 @@
+# rudra-intraday-engine — book-only strategy
+#
+# v1 default. Trusts the book engine alone (no Kronos).
+# BUY/SELL only when the book engine is high-confidence (>= 0.70).
+# Anything else is HOLD (decide_no).
+#
+# Use this as the starting point for any custom strategy. To add
+# Kronos confirmation, copy this file and add:
+#   - [adjudicator.kronos] required = true
+#   - more merge rules with kronos conditions
+
+[adjudicator]
+name = "book-only"
+version = "1.0.0"
+description = "v1 default. Trade only on high-confidence book signals."
+
+[adjudicator.book]
+required = true
+min_rules_fired = 3
+required_rules = []
+blocked_rules = []
+
+[adjudicator.kronos]
+required = false
+min_confidence = 0.65
+allowed_model_versions = ["kronos-0.6.0", "kronos-0.6.1"]
+
+[adjudicator.fallback]
+when_no_kronos = "HOLD"
+when_no_book = "HOLD"
+when_validation_fails = "HOLD"
+
+# Trade on high-confidence BUY
+[[adjudicator.merge_rules]]
+when = "book.action == 'BUY' and book.confidence >= 0.70"
+emit = "BUY"
+size_multiplier = 1.0
+reason = "book-buy-high-confidence"
+
+# Trade on high-confidence SELL
+[[adjudicator.merge_rules]]
+when = "book.action == 'SELL' and book.confidence >= 0.70"
+emit = "SELL"
+size_multiplier = 1.0
+reason = "book-sell-high-confidence"
+
+# Lower-confidence BUY at half size
+[[adjudicator.merge_rules]]
+when = "book.action == 'BUY' and book.confidence >= 0.55"
+emit = "BUY"
+size_multiplier = 0.5
+reason = "book-buy-medium-confidence"
+
+# Lower-confidence SELL at half size
+[[adjudicator.merge_rules]]
+when = "book.action == 'SELL' and book.confidence >= 0.55"
+emit = "SELL"
+size_multiplier = 0.5
+reason = "book-sell-medium-confidence"
+
+[adjudicator.risk]
+max_position_pct = 0.05
+stop_loss_pct = 0.015
+take_profit_pct = 0.045
+max_daily_trades = 6

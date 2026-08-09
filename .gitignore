@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local data — never commit
+$HOME/state/
+*.csv
+!examples/data/*.csv
+!tests/fixtures/*.csv
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
