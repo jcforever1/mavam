@@ -97,6 +97,8 @@ class DataConfig:
       - `ticker`— yfinance ticker symbol (HTTP, no ToS risk)
       - `fixture`— built-in test fixture name
       - `chart` — TradingView Desktop chart via pinchtab (local CDP, no ToS risk)
+      - `desktop` — TradingView Desktop via `tv` CLI (tradingview-mcp npm pkg);
+                    rich CDP: OHLCV + quote + indicator values + screenshots
       - `tradingview` — TradingView server-side WebSocket (ToS-restricted;
                      user has accepted the ToS + account-ban risk)
     """
@@ -105,6 +107,7 @@ class DataConfig:
     ticker: Optional[str] = None
     fixture: Optional[str] = None
     chart: Optional[dict] = None
+    desktop: Optional[dict] = None  # tv CLI (tradingview-mcp), rich CDP
     tradingview: Optional[dict] = None  # server-side, ToS-restricted
     date: Optional[str] = None  # YYYY-MM-DD, used for ticker mode
     lookback_days: int = 5
@@ -112,16 +115,21 @@ class DataConfig:
     def __post_init__(self) -> None:
         sources = sum(
             x is not None
-            for x in (self.csv, self.ticker, self.fixture, self.chart, self.tradingview)
+            for x in (self.csv, self.ticker, self.fixture, self.chart,
+                     self.desktop, self.tradingview)
         )
         if sources != 1:
             raise SchemaViolation(
-                f"data section: exactly one of csv, ticker, fixture, chart, or tradingview "
-                f"required, got {sources}"
+                f"data section: exactly one of csv, ticker, fixture, chart, "
+                f"desktop, or tradingview required, got {sources}"
             )
         if self.chart is not None and not isinstance(self.chart, dict):
             raise SchemaViolation(
                 f"data.chart must be a table (dict), got {type(self.chart).__name__}"
+            )
+        if self.desktop is not None and not isinstance(self.desktop, dict):
+            raise SchemaViolation(
+                f"data.desktop must be a table (dict), got {type(self.desktop).__name__}"
             )
         if self.tradingview is not None and not isinstance(self.tradingview, dict):
             raise SchemaViolation(
@@ -213,7 +221,8 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
             f"data section must be a table, got {type(raw).__name__}"
         )
     unknown = set(raw.keys()) - {
-        "csv", "ticker", "fixture", "chart", "tradingview", "date", "lookback_days"
+        "csv", "ticker", "fixture", "chart", "desktop", "tradingview",
+        "date", "lookback_days"
     }
     if unknown:
         raise SchemaViolation(
@@ -260,11 +269,34 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
             )
         if "ticker" not in tradingview or not tradingview["ticker"]:
             raise SchemaViolation("data.tradingview.ticker is required")
+    desktop = raw.get("desktop")
+    if desktop is not None and not isinstance(desktop, dict):
+        raise SchemaViolation(
+            f"data.desktop must be a table, got {type(desktop).__name__}"
+        )
+    if isinstance(desktop, dict):
+        desktop_allowed = {"ticker", "timeframe", "count", "switch_chart", "timeout"}
+        desktop_unknown = set(desktop.keys()) - desktop_allowed
+        if desktop_unknown:
+            raise SchemaViolation(
+                f"data.desktop: unknown keys: {sorted(desktop_unknown)}"
+            )
+        if "ticker" not in desktop or not desktop["ticker"]:
+            raise SchemaViolation("data.desktop.ticker is required")
+        if "timeframe" in desktop and desktop["timeframe"] not in {
+            "1", "3", "5", "15", "30", "45", "60", "120", "180", "240",
+            "1D", "5D", "1W", "1M", "3M", "12M",
+        }:
+            raise SchemaViolation(
+                f"data.desktop.timeframe invalid: {desktop['timeframe']!r}; "
+                f"must be one of the TradingView resolution strings"
+            )
     return DataConfig(
         csv=csv_path,
         ticker=raw.get("ticker"),
         fixture=raw.get("fixture"),
         chart=chart,
+        desktop=desktop,
         tradingview=tradingview,
         date=raw.get("date"),
         lookback_days=int(raw.get("lookback_days", 5)),

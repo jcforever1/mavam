@@ -166,6 +166,48 @@ def _cmd_run(args: list[str]) -> int:
                     file=sys.stderr,
                 )
                 return EXIT_DATA
+        elif config.data.desktop is not None:
+            # tv CLI (tradingview-mcp npm package): rich CDP bridge to
+            # the user's local TradingView Desktop. Replaces pinchtab
+            # as the recommended path. Requires:
+            #   npm install -g tradingview-mcp
+            from .data import (
+                DesktopConfig,
+                fetch_desktop_bars,
+                tv_cli_available,
+                tv_desktop_reachable,
+            )
+            d = config.data.desktop
+            desktop_config = DesktopConfig(
+                ticker=d.get("ticker", ""),
+                timeframe=d.get("timeframe", "1D"),
+                count=int(d.get("count", 300)),
+                switch_chart=bool(d.get("switch_chart", True)),
+                timeout=int(d.get("timeout", 30)),
+            )
+            if not tv_cli_available():
+                print(
+                    "data error: tv CLI not found; install with "
+                    "`npm install -g tradingview-mcp`",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
+            if not tv_desktop_reachable():
+                print(
+                    "data error: TradingView Desktop not reachable via CDP. "
+                    "Start your desktop app, or use `tv launch` to start it.",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
+            bars = fetch_desktop_bars(desktop_config, as_of_unix=config.as_of_unix)
+            if bars is None:
+                print(
+                    f"data error: tv CLI returned no bars for "
+                    f"{desktop_config.ticker or '(current chart)'}; "
+                    f"check the chart is loaded",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
         elif config.data.tradingview is not None:
             # Server-side TradingView (ToS-restricted, user has accepted)
             from .data import fetch_tradingview_bars, TradingViewServerConfig
@@ -193,11 +235,12 @@ def _cmd_run(args: list[str]) -> int:
                 )
                 return EXIT_DATA
         else:
-            # For v1, only CSV, ticker, chart, and tradingview are supported
+            # For v1, only CSV, ticker, chart, desktop, and tradingview are supported
             print(
                 f"data error: no data source configured "
                 f"(csv={config.data.csv}, ticker={config.data.ticker}, "
-                f"chart={config.data.chart}, tradingview={config.data.tradingview}, "
+                f"chart={config.data.chart}, desktop={config.data.desktop}, "
+                f"tradingview={config.data.tradingview}, "
                 f"fixture={config.data.fixture})",
                 file=sys.stderr,
             )
@@ -227,6 +270,9 @@ def _cmd_run(args: list[str]) -> int:
     elif config.data.tradingview is not None:
         tv_d = config.data.tradingview
         symbol = f"{tv_d.get('exchange', '')}:{tv_d.get('ticker', '')}"
+    elif config.data.desktop is not None:
+        d = config.data.desktop
+        symbol = str(d.get("ticker", "")).upper()
     entry_price = bars[-1].close
 
     # Merge
@@ -408,9 +454,11 @@ def _cmd_paper_log(args: list[str]) -> int:
         ticker = str(config.data.chart.get("ticker", "")).upper()
     elif config.data.tradingview is not None:
         ticker = str(config.data.tradingview.get("ticker", "")).upper()
+    elif config.data.desktop is not None:
+        ticker = str(config.data.desktop.get("ticker", "")).upper()
     if not ticker:
         print(
-            "config error: paper log needs a ticker (csv, ticker, chart, or tradingview)",
+            "config error: paper log needs a ticker (csv, ticker, chart, desktop, or tradingview)",
             file=sys.stderr,
         )
         return EXIT_CONFIG

@@ -1,0 +1,19 @@
+# NVDA via the `tv` CLI (tradingview-mcp npm package)
+#
+# Requires:
+#   npm install -g tradingview-mcp
+#   TradingView Desktop running (any chart open)
+#
+# This is the new default over the chart (pinchtab) data source.
+# It uses the same CDP bridge as pinchtab but exposes a much richer
+# surface: real-time quote, indicator values, screenshots, Pine
+# Script tools, chart drawings, alerts, watchlists, multi-pane.
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[data.desktop]
+ticker = "BATS:NVDA"
+timeframe = "1D"
+count = 500
+switch_chart = true

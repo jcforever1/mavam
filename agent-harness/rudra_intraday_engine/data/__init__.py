@@ -1,4 +1,4 @@
-"""Data package — CSV + yfinance (HTTP) + pinchtab (local CDP) + tradingview (server, ToS-restricted) loaders."""
+"""Data package — CSV + yfinance (HTTP) + pinchtab (local CDP) + tradingview-mcp (rich CDP) + tradingview (server, ToS-restricted) loaders."""
 
 from .loader import DataLoadError, load_bars_from_csv
 from .pinchtab import (
@@ -7,6 +7,16 @@ from .pinchtab import (
     ChartConfig,
     fetch_chart_bars,
     pinchtab_available,
+)
+from .tradingview_source import (
+    DesktopConfig,
+    fetch_desktop_bars,
+    get_indicator_values,
+    get_quote as get_desktop_quote,
+    get_state as get_desktop_state,
+    screenshot as desktop_screenshot,
+    tv_cli_available,
+    tv_desktop_reachable,
 )
 from .tradingview_server import (
     DEFAULT_STALE_AFTER_SECONDS as TRADINGVIEW_STALE_AFTER_SECONDS,
@@ -28,6 +38,14 @@ __all__ = [
     "PINCHTAB_STALE_AFTER_SECONDS",
     "fetch_chart_bars",
     "pinchtab_available",
+    "DesktopConfig",
+    "fetch_desktop_bars",
+    "get_desktop_quote",
+    "get_desktop_state",
+    "get_indicator_values",
+    "desktop_screenshot",
+    "tv_cli_available",
+    "tv_desktop_reachable",
     "TradingViewServerConfig",
     "TRADINGVIEW_STALE_AFTER_SECONDS",
     "fetch_tradingview_bars",
