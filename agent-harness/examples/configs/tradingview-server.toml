@@ -1,0 +1,45 @@
+# rudra-intraday-engine — server-side TradingView run config
+#
+# ⚠️  TRADINGVIEW ToS VIOLATION  ⚠️
+# This data source connects DIRECTLY to TradingView's backend
+# servers using an unofficial protocol. TradingView's Terms of
+# Service explicitly forbid this:
+#
+#   "Performing automated trading or algorithmic decision-making
+#    using extracted data"
+#   "Connecting to TradingView's servers or infrastructure"
+#
+# Using this path may result in your account being banned.
+# The user has accepted this risk. By using this config, you
+# accept it too.
+#
+# When to use this:
+#   - You have a paid TradingView account and accept the ban risk
+#   - You need historical 5-min data beyond TradingView's free-tier limit
+#   - You understand the protocol may break when TradingView rotates it
+#
+# When to use other sources instead:
+#   - yfinance: no ToS risk, unlimited history (recommended default)
+#   - pinchtab: CDP to your local Desktop, gray area but defensible
+#
+# Setup:
+#   1. Open tradingview.com in Chrome
+#   2. Log in
+#   3. DevTools → Application → Cookies → tradingview.com
+#   4. Find `sessionid`, copy its value
+#   5. Set env var: export TRADINGVIEW_SESSION_ID="..."
+#      OR pass via [data.tradingview] session_id = "..." (NOT recommended —
+#      leaves the token in the TOML file)
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[predictor]
+enabled = false
+
+[data.tradingview]
+ticker = "AAPL"
+exchange = "NASDAQ"
+interval = "5"
+# session_id = "..."  # leave empty; use TRADINGVIEW_SESSION_ID env var
+stale_after_seconds = 0

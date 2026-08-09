@@ -164,12 +164,39 @@ def _cmd_run(args: list[str]) -> int:
                     file=sys.stderr,
                 )
                 return EXIT_DATA
+        elif config.data.tradingview is not None:
+            # Server-side TradingView (ToS-restricted, user has accepted)
+            from .data import fetch_tradingview_bars, TradingViewServerConfig
+            tv_d = config.data.tradingview
+            tv_config = TradingViewServerConfig(
+                ticker=tv_d.get("ticker", ""),
+                exchange=tv_d.get("exchange", "NASDAQ"),
+                interval=str(tv_d.get("interval", "5")),
+                session_id=tv_d.get("session_id", ""),
+                stale_after_seconds=int(tv_d.get("stale_after_seconds", 0)),
+            )
+            print(
+                "WARNING: server-side TradingView data source — this "
+                "violates TradingView's ToS and may result in account "
+                "termination. You have explicitly accepted this risk.",
+                file=sys.stderr,
+            )
+            bars = fetch_tradingview_bars(tv_config, as_of_unix=config.as_of_unix)
+            if bars is None:
+                print(
+                    "data error: tradingview server fetch returned no bars; "
+                    "is the sessionid valid? Check the network and TradingView's "
+                    "current API endpoints.",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
         else:
-            # For v1, only CSV, ticker, and chart are supported
+            # For v1, only CSV, ticker, chart, and tradingview are supported
             print(
                 f"data error: no data source configured "
                 f"(csv={config.data.csv}, ticker={config.data.ticker}, "
-                f"chart={config.data.chart}, fixture={config.data.fixture})",
+                f"chart={config.data.chart}, tradingview={config.data.tradingview}, "
+                f"fixture={config.data.fixture})",
                 file=sys.stderr,
             )
             return EXIT_DATA
@@ -195,6 +222,9 @@ def _cmd_run(args: list[str]) -> int:
     elif config.data.chart is not None:
         chart_d = config.data.chart
         symbol = f"{chart_d.get('exchange', '')}:{chart_d.get('ticker', '')}"
+    elif config.data.tradingview is not None:
+        tv_d = config.data.tradingview
+        symbol = f"{tv_d.get('exchange', '')}:{tv_d.get('ticker', '')}"
     entry_price = bars[-1].close
 
     # Merge

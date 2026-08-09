@@ -94,32 +94,38 @@ class DataConfig:
 
     Exactly one of:
       - `csv`   — path to a CSV file (timestamp,open,high,low,close,volume)
-      - `ticker`— yfinance ticker symbol (v1.1; CLI not yet wired)
+      - `ticker`— yfinance ticker symbol (HTTP, no ToS risk)
       - `fixture`— built-in test fixture name
-      - `chart` — TradingView chart via pinchtab/playwright.
-                  Dict with: ticker, exchange, interval, stale_after_seconds.
+      - `chart` — TradingView Desktop chart via pinchtab (local CDP, no ToS risk)
+      - `tradingview` — TradingView server-side WebSocket (ToS-restricted;
+                     user has accepted the ToS + account-ban risk)
     """
 
     csv: Optional[Path] = None
     ticker: Optional[str] = None
     fixture: Optional[str] = None
     chart: Optional[dict] = None
+    tradingview: Optional[dict] = None  # server-side, ToS-restricted
     date: Optional[str] = None  # YYYY-MM-DD, used for ticker mode
     lookback_days: int = 5
 
     def __post_init__(self) -> None:
         sources = sum(
             x is not None
-            for x in (self.csv, self.ticker, self.fixture, self.chart)
+            for x in (self.csv, self.ticker, self.fixture, self.chart, self.tradingview)
         )
         if sources != 1:
             raise SchemaViolation(
-                f"data section: exactly one of csv, ticker, fixture, or chart "
+                f"data section: exactly one of csv, ticker, fixture, chart, or tradingview "
                 f"required, got {sources}"
             )
         if self.chart is not None and not isinstance(self.chart, dict):
             raise SchemaViolation(
                 f"data.chart must be a table (dict), got {type(self.chart).__name__}"
+            )
+        if self.tradingview is not None and not isinstance(self.tradingview, dict):
+            raise SchemaViolation(
+                f"data.tradingview must be a table (dict), got {type(self.tradingview).__name__}"
             )
         if self.csv is not None and not self.csv.exists():
             raise SchemaViolation(
@@ -207,7 +213,7 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
             f"data section must be a table, got {type(raw).__name__}"
         )
     unknown = set(raw.keys()) - {
-        "csv", "ticker", "fixture", "chart", "date", "lookback_days"
+        "csv", "ticker", "fixture", "chart", "tradingview", "date", "lookback_days"
     }
     if unknown:
         raise SchemaViolation(
@@ -240,11 +246,26 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
             )
         if "ticker" not in chart or not chart["ticker"]:
             raise SchemaViolation("data.chart.ticker is required")
+    tradingview = raw.get("tradingview")
+    if tradingview is not None and not isinstance(tradingview, dict):
+        raise SchemaViolation(
+            f"data.tradingview must be a table, got {type(tradingview).__name__}"
+        )
+    if isinstance(tradingview, dict):
+        tv_allowed = {"ticker", "exchange", "interval", "session_id", "stale_after_seconds"}
+        tv_unknown = set(tradingview.keys()) - tv_allowed
+        if tv_unknown:
+            raise SchemaViolation(
+                f"data.tradingview: unknown keys: {sorted(tv_unknown)}"
+            )
+        if "ticker" not in tradingview or not tradingview["ticker"]:
+            raise SchemaViolation("data.tradingview.ticker is required")
     return DataConfig(
         csv=csv_path,
         ticker=raw.get("ticker"),
         fixture=raw.get("fixture"),
         chart=chart,
+        tradingview=tradingview,
         date=raw.get("date"),
         lookback_days=int(raw.get("lookback_days", 5)),
     )
