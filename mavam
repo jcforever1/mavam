@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# mavam — wrapper script that always runs from the right cwd.
+# Save this somewhere on your PATH (e.g., /opt/homebrew/bin/mavam)
+# and `chmod +x` it. Then you can run `mavam run <config>` from anywhere.
+
+set -e
+
+# Resolve the REAL path of this script (follows symlinks), not the
+# path the user invoked it via. BASH_SOURCE gives the symlink path
+# when invoked via symlink, so we use readlink.
+SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+AGENT_HARNESS="$SCRIPT_DIR/agent-harness"
+
+if [ ! -d "$AGENT_HARNESS" ]; then
+    echo "error: agent-harness not found at $AGENT_HARNESS" >&2
+    echo "       (script is at $SCRIPT_PATH)" >&2
+    exit 1
+fi
+
+cd "$AGENT_HARNESS"
+exec rudra-intraday "$@"
