@@ -28,6 +28,7 @@ from .tv_stream import (
     stream_tv,
     stream_tv_to_file,
 )
+from .orderflow_install import install_orderflow
 from .yfinance_source import (
     DEFAULT_STALE_AFTER_SECONDS as YFINANCE_STALE_AFTER_SECONDS,
     YFinanceConfig,
@@ -54,6 +55,7 @@ __all__ = [
     "VALID_STREAMS",
     "stream_tv",
     "stream_tv_to_file",
+    "install_orderflow",
     "TradingViewServerConfig",
     "TRADINGVIEW_STALE_AFTER_SECONDS",
     "fetch_tradingview_bars",

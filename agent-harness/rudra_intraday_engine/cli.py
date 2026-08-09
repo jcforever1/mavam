@@ -67,6 +67,8 @@ def main(argv: Sequence[str]) -> int:
         return _cmd_paper(rest)
     if cmd == "stream":
         return _cmd_stream(rest)
+    if cmd == "install":
+        return _cmd_install(rest)
     if cmd in ("-h", "--help", "help"):
         _print_usage()
         return EXIT_OK
@@ -642,6 +644,40 @@ def _cmd_paper_replay(args: list[str]) -> int:
 
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+
+def _cmd_install(args: list[str]) -> int:
+    """Install an indicator onto the TradingView chart.
+
+    `rudra-intraday install orderflow`
+    """
+    if not args:
+        print(
+            "usage: rudra-intraday install <indicator>\n"
+            "  indicators: orderflow",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    sub = args[0]
+    if sub == "orderflow":
+        from .data import install_orderflow
+        result = install_orderflow()
+        if not result["tv_reachable"]:
+            for step in result["manual_steps"]:
+                print(f"  {step}", file=sys.stderr)
+            return EXIT_RUNTIME
+        print(f"orderflow install:")
+        print(f"  tv reachable:   {result['tv_reachable']}")
+        print(f"  pine file:      {result['pine_file']}")
+        print(f"  lines set:      {result['lines_set']}")
+        print(f"  saved:          {result['saved']}")
+        print(f"  on chart:       {result['added_to_chart']}  (manual click required)")
+        print()
+        for step in result["manual_steps"]:
+            print(step)
+        return EXIT_OK
+    print(f"install: unknown indicator {sub!r}", file=sys.stderr)
+    return EXIT_USAGE
 
 
 def _cmd_stream(args: list[str]) -> int:

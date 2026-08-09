@@ -1,0 +1,71 @@
+//@version=6
+// OrderFlow Summary — written for mavam
+//
+// Computes four order-flow signals and plots them in a separate pane
+// (overlay=false) so they don't clutter the price chart:
+//
+//   - Cumulative Delta (cumDelta): running sum of bar-direction volume.
+//     proxy for buy-sell imbalance. Trending markets should have
+//     cumDelta and price moving together; divergence is a warning.
+//
+//   - On-Balance Volume (OBV): classic volume-price indicator.
+//     Cumulative volume signed by bar direction.
+//
+//   - VWAP (intraday): volume-weighted average price. Anchored to
+//     the start of the current session. Used as a fair-value
+//     reference by institutional traders.
+//
+//   - Buy/Sell volume: split volume into up-bar and down-bar
+//     contributions. Histogram shows the imbalance.
+//
+// The agent (mavam) reads these via `tv values` and the engine's
+// existing orderflow.py module cross-checks them against the
+// tick-volume delta computed from OHLCV bars.
+
+indicator("OrderFlow Summary", overlay=false, shorttitle="OFS")
+
+// --- Inputs ---
+length = input.int(20, "Smoothing length", minval=1, maxval=200)
+showDelta = input.bool(true, "Show Cumulative Delta")
+showOBV = input.bool(true, "Show OBV")
+showVWAP = input.bool(true, "Show VWAP")
+showBuySell = input.bool(true, "Show Buy/Sell Volume")
+
+// --- Bar-direction volume delta ---
+upVol = volume * (close > open ? 1 : close == open ? 0.5 : 0)
+dnVol = volume * (close < open ? 1 : close == open ? 0.5 : 0)
+delta = upVol - dnVol
+
+// --- Cumulative Delta ---
+cumDelta = ta.cum(delta)
+smoothDelta = ta.ema(cumDelta, length)
+
+// --- On-Balance Volume ---
+obv = ta.cum(math.sign(close - close[1]) * volume)
+smoothOBV = ta.ema(obv, length)
+
+// --- Intraday VWAP (anchored to session start) ---
+isNewSession = ta.change(time("D")) != 0
+sessionStart = ta.valuewhen(isNewSession, time, 0)
+cumPV = ta.cum(math.sum((high + low + close) / 3 * volume, 0))  // placeholder
+// Proper intraday VWAP: reset cumulative values at session start
+var float cumPV2 = 0.0
+var float cumV2 = 0.0
+if isNewSession
+    cumPV2 := 0.0
+    cumV2 := 0.0
+typicalPrice = (high + low + close) / 3
+cumPV2 += typicalPrice * volume
+cumV2 += volume
+vwap = cumV2 != 0 ? cumPV2 / cumV2 : close
+
+// --- Plots ---
+plot(showDelta ? smoothDelta : na, color=color.new(color.blue, 0), title="Cum Delta", linewidth=2)
+plot(showOBV ? smoothOBV : na, color=color.new(color.orange, 0), title="OBV", linewidth=2)
+plot(showVWAP ? vwap : na, color=color.new(color.purple, 0), title="VWAP", linewidth=2)
+plot(showBuySell and close > open ? upVol : na, color=color.new(color.green, 50), style=plot.style_columns, title="Buy Vol")
+plot(showBuySell and close < open ? -dnVol : na, color=color.new(color.red, 50), style=plot.style_columns, title="Sell Vol")
+plot(0, color=color.gray, title="Zero")
+
+// --- Zero line + buy/sell split as histogram ---
+fill(plot(showBuySell and close > open ? upVol : na, display=display.none), plot(0), color=color.new(color.green, 80))
