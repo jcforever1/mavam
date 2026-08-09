@@ -10,7 +10,7 @@ from unittest.mock import patch
 from rudra_intraday_engine.core.profile import Bar
 from rudra_intraday_engine.data import (
     ChartConfig,
-    DEFAULT_STALE_AFTER_SECONDS,
+    PINCHTAB_STALE_AFTER_SECONDS,
     fetch_chart_bars,
     pinchtab_available,
 )
@@ -23,7 +23,7 @@ class TestChartConfig(unittest.TestCase):
         self.assertEqual(c.ticker, "SPY")
         self.assertEqual(c.exchange, "NASDAQ")
         self.assertEqual(c.interval, "5")
-        self.assertEqual(c.stale_after_seconds, DEFAULT_STALE_AFTER_SECONDS)
+        self.assertEqual(c.stale_after_seconds, PINCHTAB_STALE_AFTER_SECONDS)
 
     def test_custom_values(self):
         c = ChartConfig(

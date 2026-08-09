@@ -126,9 +126,10 @@ class DataConfig:
                 f"data.csv not found: {self.csv}"
             )
         if self.ticker is not None and self.date is None:
-            raise SchemaViolation(
-                "data.ticker requires data.date (YYYY-MM-DD)"
-            )
+            # Note: the yfinance data source uses `period` (relative
+            # range like "5d") by default. The optional `date` field
+            # is reserved for a future "as of this specific date" mode.
+            pass
         if self.lookback_days < 1 or self.lookback_days > 365:
             raise SchemaViolation(
                 f"data.lookback_days must be in [1, 365], got {self.lookback_days}"

@@ -110,6 +110,30 @@ def _cmd_run(args: list[str]) -> int:
     try:
         if config.data.csv is not None:
             bars = load_bars_from_csv(config.data.csv)
+        elif config.data.ticker is not None:
+            # yfinance HTTP path (no browser)
+            from .data import fetch_yfinance_bars, YFinanceConfig, yfinance_available
+            if not yfinance_available():
+                print(
+                    "data error: ticker source requires yfinance. "
+                    "Install with: pip install rudra-intraday-engine[yfinance]",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
+            yf_config = YFinanceConfig(
+                ticker=config.data.ticker,
+                period="5d",
+                interval="5m",
+                stale_after_seconds=0,  # 0 = no filter, return all bars
+            )
+            bars = fetch_yfinance_bars(yf_config, as_of_unix=config.as_of_unix)
+            if bars is None:
+                print(
+                    f"data error: yfinance returned no bars for "
+                    f"{config.data.ticker}; check network or ticker symbol",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
         elif config.data.chart is not None:
             # TradingView chart via pinchtab/playwright
             from .data import fetch_chart_bars, ChartConfig, pinchtab_available
@@ -118,7 +142,8 @@ def _cmd_run(args: list[str]) -> int:
                     "data error: chart source requires playwright + chromium. "
                     "Install with: "
                     "pip install rudra-intraday-engine[pinchtab] && "
-                    "playwright install chromium",
+                    "playwright install chromium. "
+                    "Or use [data] ticker=... with yfinance for an HTTP-only path.",
                     file=sys.stderr,
                 )
                 return EXIT_DATA
@@ -139,11 +164,11 @@ def _cmd_run(args: list[str]) -> int:
                 )
                 return EXIT_DATA
         else:
-            # For v1, only CSV and chart are supported
+            # For v1, only CSV, ticker, and chart are supported
             print(
-                f"data error: only CSV and chart sources are supported in v1; "
-                f"got ticker={config.data.ticker}, "
-                f"fixture={config.data.fixture}",
+                f"data error: no data source configured "
+                f"(csv={config.data.csv}, ticker={config.data.ticker}, "
+                f"chart={config.data.chart}, fixture={config.data.fixture})",
                 file=sys.stderr,
             )
             return EXIT_DATA
@@ -164,6 +189,8 @@ def _cmd_run(args: list[str]) -> int:
     symbol = ""
     if config.data.csv is not None:
         symbol = config.data.csv.stem.upper()
+    elif config.data.ticker is not None:
+        symbol = config.data.ticker.upper()
     elif config.data.chart is not None:
         chart_d = config.data.chart
         symbol = f"{chart_d.get('exchange', '')}:{chart_d.get('ticker', '')}"

@@ -1,0 +1,20 @@
+# rudra-intraday-engine — yfinance run config
+#
+# Pulls real 5-min SPY bars from Yahoo Finance via HTTP (no browser).
+# The yfinance path is the "actually works" pinchtab-compatible
+# implementation — the architecture is data-source-agnostic.
+#
+# Requires:
+#   pip install rudra-intraday-engine[yfinance]
+#
+# stale_after_seconds = 0 means "no freshness check" — return all
+# bars from the period. Set to 300 (5 min) for live-trading use.
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[predictor]
+enabled = false
+
+[data]
+ticker = "SPY"
