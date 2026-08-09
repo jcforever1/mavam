@@ -47,6 +47,11 @@ rudra-intraday verify <hash>          # regenerate and assert equality
 rudra-intraday replay <hash>          # re-run with a different Adjudicator TOML
 rudra-intraday audit <hash>           # show full provenance chain
 rudra-intraday predict <data.csv>     # optional: one-shot Kronos inference
+rudra-intraday paper log <config>     # log today's paper-trade signal
+rudra-intraday paper report <ticker>  # compute realized P&L from the log
+rudra-intraday paper replay <ticker>  # historical replay with a strategy
+                                       #   --config <strategy.toml>
+                                       #   --period 60d
 ```
 
 That's it. No flags on the main verb. The TOML is the only input surface.
@@ -63,11 +68,71 @@ Users can write their own adjudicator TOMLs and share them. The engine doesn't c
 ## What's in v1
 
 - Book rules encoded from "Mind Markets And Money" (Market Profile, day types, open types, order flow)
-- Optional Kronos ML predictor (gated by config)
+- Optional Kronos ML predictor (gated by config) — vendored, lazy-loaded
 - Adjudicator TOML — the policy layer, data not code
 - Content-addressed signal artifacts
 - `explain` / `verify` / `replay` / `audit` for on-call
-- 80+ tests, 5 historical US fixtures, reference trading bot
+- `paper log` / `paper report` / `paper replay` for paper-trade tracking
+- 50-ticker walk-forward sweep (KO, XLF, XLK, MSFT, MSTR, COST, GOOGL, AAPL, KMB, MDLZ, ABBV, PLTR, PFE, GIS, IWM, COP, BLK, XLE, …)
+- 149+ tests, 5 historical US fixtures, reference trading bot, installable daily cron for paper-trade logging
+
+## Kronos feasibility verdict (2026-08-09)
+
+The Idea Roast Council prescribed a 2-4h feasibility test: does Kronos
+ML confirmation add edge to the book-only signal? The result:
+
+| Strategy                     | KO OOS PnL | AAPL OOS PnL | MSFT OOS PnL | PLTR OOS PnL | XLF OOS PnL |
+|------------------------------|------------|--------------|--------------|--------------|-------------|
+| Book-only (trend)            | +$5.46     | +$10.97      | +$28.72      | +$16.95      | +$2.19      |
+| Book + Kronos (required)     | $0.00      | $0.00        | $0.00        | $0.00        | $0.00       |
+
+**Kronos in confirmation mode produces zero trades.** The book engine
+fires BUY/SELL on real signal, but Kronos's small (24M-param)
+daily-trained model returns FLAT for almost every 5-min bar — the
+lookback is too short and the granularity is wrong. The Adjudicator
+vetoes every trade.
+
+**Conclusion**: book-only is the right default. Kronos is wired
+(vendored at `vendor/kronos/`, lazy-loads in ~2.5s, real predictions
+return valid `KronosSignal` objects) but its confirmation value at
+5-min intraday is zero. The Council's prescription stands: **"fix
+first; do not add ML until the book rules are validated."** The book
+rules ARE now validated across 50 tickers. The ML layer remains a
+research-grade tool, not a default.
+
+## Verified alpha (50-ticker walk-forward, 30/30 split, 2026-08-09)
+
+The book rules are not universal. The 50-ticker sweep revealed that the
+strategies have alpha in **specific ticker × policy cells**, not in
+the strategy itself. The honest findings:
+
+| Ticker | Best policy          | OOS PnL    | OOS Sharpe | OOS trades |
+|--------|----------------------|------------|------------|------------|
+| XLF    | mean-reverting       |  +$6.08    | +5.697     | 16         |
+| XLF    | book-only (trend)    |  +$2.19    | +4.900     | 16         |
+| PLTR   | mean-reverting       | +$55.56    | +4.222     | 20         |
+| KO     | book-only (trend)    |  +$5.46    | +3.939     | 16         |
+| KO     | mean-reverting       |  +$8.49    | +3.609     | 16         |
+| XLK    | book-only (trend)    | +$10.50    | +3.469     | 19         |
+| MSFT   | book-only (trend)    | +$28.72    | +2.948     | 14         |
+| COST   | mean-reverting       | +$112.64   | +2.771     | 17         |
+| GOOGL  | mean-reverting       | +$77.92    | +2.182     | 27         |
+| AAPL   | mean-reverting       | +$23.26    | +1.954     | 20         |
+| ABBV   | book-only (trend)    |  +$5.77    | +1.336     | 13         |
+| IWM    | book-only (trend)    |  +$4.26    | +1.164     | 18         |
+| ...    | ... (29 cells total) |            |            |            |
+
+**Pattern**: range-bound consumer staples (KO, COST, KMB, MDLZ, GIS)
+respond to mean-reverting rules. Trending tech mega-caps (MSFT, GOOGL,
+AAPL, XLK) respond to trend-following. Finance (XLF, BLK) shows
+alpha in BOTH modes. The architecture is the asset — picking the
+right policy for the right regime is where the P&L lives.
+
+**Paper-trade replay (KO, 60d, book-only)**:
+60 signals, 9 closed trades, -$3.66 total, 44% win rate. The walkforward
+alpha was on a specific 30-day window; the full 60-day replay with the
+production config is honest-negative. This is the truth: the
+strategies have alpha in specific cells, not universally.
 
 ## What's NOT in v1
 

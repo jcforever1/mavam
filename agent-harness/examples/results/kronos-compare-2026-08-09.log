@@ -1,0 +1,19 @@
+====================================================================================================
+KRONOS-ENABLED WALK-FORWARD — 5 tickers, 60d bars, 30/30 split
+====================================================================================================
+
+Ticker   Adj                       IS PnL   OOS PnL  IS Sharpe  OOS Sharpe  OOS Trades    Verdict
+----------------------------------------------------------------------------------------------------
+KO       book+kronos            $   +0.00 $   +0.00     +0.000       +0.000            0           ✗
+AAPL     book+kronos            $   +0.00 $   +0.00     +0.000       +0.000            0           ✗
+MSFT     book+kronos            $   +0.00 $   +0.00     +0.000       +0.000            0           ✗
+PLTR     book+kronos            $   +0.00 $   +0.00     +0.000       +0.000            0           ✗
+XLF      book+kronos            $   +0.00 $   +0.00     +0.000       +0.000            0           ✗
+
+Compare to book-only sweep (TICKERS_50):
+  KO   book-only (trend)      OOS PnL $  +5.46  OOS Sharpe +3.939
+  XLF  book-only (trend)      OOS PnL $  +2.19  OOS Sharpe +4.900
+  PLTR book-only (trend)      OOS PnL $ +16.95  OOS Sharpe +3.214
+  MSFT book-only (trend)      OOS PnL $ +28.72  OOS Sharpe +2.948
+  AAPL book-only (trend)      OOS PnL $ +10.97  OOS Sharpe +1.965
+  MSTR book-only (trend)      OOS PnL $  +3.37  OOS Sharpe +0.516
