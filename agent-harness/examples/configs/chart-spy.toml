@@ -1,13 +1,22 @@
-# rudra-intraday-engine — TradingView chart run config
+# rudra-intraday-engine — TradingView Desktop chart run config
 #
-# Pulls live 5-min bars from TradingView via pinchtab (Playwright).
+# Pulls live bars from the user's local TradingView Desktop via pinchtab.
+# The data is read from whatever chart the user currently has open in
+# the desktop app, on whatever resolution they're viewing.
+#
+# IMPORTANT: TradingView Desktop must be running with the debug port:
+#   /Applications/TradingView.app/Contents/MacOS/TradingView \
+#       --remote-debugging-port=9222
+#
+# Limitations:
+#   - The bars returned match whatever chart the user has loaded
+#     (symbol, resolution, visible history)
+#   - TradingView's free tier limits 5-min history to recent days
+#   - For longer history, use the yfinance run config instead
+#
 # Requires:
 #   pip install rudra-intraday-engine[pinchtab]
-#   playwright install chromium
-#
-# The integration is stateless and pull-based. Each `run` launches a
-# fresh headless browser, fetches the visible bars, and closes. No
-# persistent state, no cookies, no history.
+#   (no chromium download — connects to your existing desktop)
 
 [adjudicator]
 file = "../strategies/book-only.toml"
@@ -16,10 +25,12 @@ file = "../strategies/book-only.toml"
 enabled = false
 
 [data.chart]
-ticker = "SPY"
-exchange = "NASDAQ"
-interval = "5"
-stale_after_seconds = 300
-
-# Optional: pin to a specific snapshot time (deterministic replay)
-# as_of_unix = 1754835000
+# These fields are diagnostic only — the actual symbol/resolution
+# come from whatever chart the user has loaded. Set them to match
+# your chart for cleaner log output.
+ticker = "ANY"
+exchange = ""
+interval = "match-chart"
+stale_after_seconds = 0   # 0 = no freshness check (return all bars)
+page_url_contains = ""    # optional: match a specific chart URL
+cdp_url = "http://localhost:9222"

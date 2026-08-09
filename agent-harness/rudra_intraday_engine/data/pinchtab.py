@@ -14,48 +14,37 @@ What this module does NOT do:
 
 What this module DOES do:
   - Connect to a locally-running TradingView Desktop that the user
-    started with `--remote-debugging-port=9222` (or to any other
-    Chromium-based app the user has launched the same way)
-  - Use the standard CDP (via playwright's connect_over_cdp) to list
-    pages, attach to the chart page, and run JavaScript in the page's
-    own context to read chart data the user is already viewing
+    started with `--remote-debugging-port=9222`
+  - Use raw CDP over the page-level WebSocket (NOT playwright — that
+    library hangs on the Desktop's protocol handshake, a known issue
+    with Electron-based apps) to evaluate JavaScript in the chart
+    page's context
+  - Read the bar data via TradingView's internal chart model:
+        _exposed_chartWidgetCollection.activeChartWidget.value()
+            .model().mainSeries().data().bars()
+    Each bar is a 6-element array [unix_time, open, high, low, close, volume]
   - Return a typed list[Bar] to the engine
 
-This is the legitimate "control your own local app" pattern, the same
-way Chrome DevTools lets you inspect a Chrome tab. TradingView's ToS
-governs what the user does with the data; the engine neither knows
-nor cares about that. The data is the user's, from the user's app,
-running on the user's machine.
+IMPORTANT CONSTRAINTS:
+  - The user must have a chart open in the connected Desktop with the
+    resolution AND history range they want. TradingView's free tier
+    limits 5-min data to recent history (~10 days). For longer backtests
+    use yfinance (no such limit).
+  - The data returned is exactly what the chart is currently showing.
+    If the chart is on 1M resolution, you get monthly bars. If on
+    5min, you get 5-min bars (but limited by TradingView's history depth).
 
-Setup (the user runs these on their own machine):
-
-    # macOS
+Setup:
     /Applications/TradingView.app/Contents/MacOS/TradingView \\
         --remote-debugging-port=9222
-
-    # Windows
-    \"C:\\Program Files\\TradingView\\TradingView.exe\" \\
-        --remote-debugging-port=9222
-
-    # Linux
-    /opt/tradingview/tradingview \\
-        --remote-debugging-port=9222
-
-The integration is:
-  1. Stateless — no persistent connection, no session state.
-  2. Pull-based — every fetch is a fresh CDP attach.
-  3. Bounded — an explicit `stale_after_unix` rejects data older
-     than the freshness window.
-
-Requires:
-    pip install rudra-intraday-engine[pinchtab]
-    # (no chromium download — connects to the user's existing app)
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -64,9 +53,6 @@ from ..core.profile import Bar
 
 
 DEFAULT_STALE_AFTER_SECONDS = 300
-
-# Default CDP endpoint. The user starts their TradingView Desktop
-# (or any Chromium-based app) with this port.
 DEFAULT_CDP_URL = "http://localhost:9222"
 
 
@@ -79,133 +65,90 @@ class ChartConfig:
     interval: str = "5"
     stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS
     cdp_url: str = DEFAULT_CDP_URL
-    screenshot_path: Optional[Path] = None  # for debugging / audit
-    page_url_contains: Optional[str] = None  # if multiple tabs, pick this one
+    screenshot_path: Optional[Path] = None
+    page_url_contains: Optional[str] = None
 
 
 def pinchtab_available(cdp_url: str = DEFAULT_CDP_URL) -> bool:
-    """Return True if a CDP endpoint is reachable at the given URL.
-
-    This checks `GET /json/version` on the debug port. The user must
-    have started their TradingView Desktop (or other Chromium app)
-    with `--remote-debugging-port=9222` for this to return True.
-    """
+    """Return True if a CDP endpoint is reachable at the given URL."""
     try:
-        import urllib.request
         with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=2) as r:
             return r.status == 200
     except Exception:
         return False
 
 
-def _list_pages(cdp_url: str) -> list[dict]:
-    """Return the list of pages (tabs) the CDP browser is showing."""
-    import urllib.request
-    with urllib.request.urlopen(f"{cdp_url}/json", timeout=5) as r:
-        return json.loads(r.read())
-
-
-def _pick_chart_page(
-    pages: list[dict],
-    page_url_contains: Optional[str] = None,
-) -> Optional[dict]:
-    """Pick the most likely TradingView chart page from the CDP page list."""
-    chart_pages = []
-    for p in pages:
-        url = p.get("url", "")
-        title = p.get("title", "")
-        # TradingView chart pages: tradingview.com/chart, /chart/, or
-        # the desktop app's internal chart pages.
-        is_tv = (
-            "tradingview" in url.lower()
-            or "tradingview" in title.lower()
-            or "/chart" in url.lower()
-            or "chart" in title.lower()
-        )
-        if not is_tv:
-            continue
-        if page_url_contains and page_url_contains not in url:
-            continue
-        chart_pages.append(p)
-    if not chart_pages:
+def _find_chart_page(cdp_url: str) -> Optional[dict]:
+    """Find the TradingView chart page in the CDP page list."""
+    try:
+        with urllib.request.urlopen(f"{cdp_url}/json", timeout=5) as r:
+            pages = json.loads(r.read())
+    except Exception:
         return None
-    # Prefer the page with the most specific TradingView chart URL
-    chart_pages.sort(
-        key=lambda p: (
-            "/chart" in p.get("url", ""),  # has /chart in URL
-            "tradingview" in p.get("url", "").lower(),  # TV URL
-            len(p.get("url", "")),  # longer URL = more specific
-        ),
-        reverse=True,
-    )
-    return chart_pages[0]
+    for p in pages:
+        if p.get("type") != "page":
+            continue
+        url = p.get("url", "")
+        if "tradingview.com/chart" in url.lower() or "/chart" in url.lower():
+            return p
+    return None
 
 
-# JavaScript snippets that try to extract bar data from a TradingView
-# page's JavaScript context. Each returns JSON-encoded array of
-# {t, o, h, l, c, v} objects, or null. The first one that returns
-# non-null wins.
-_BAR_EXTRACTION_SNIPPETS = [
-    # Strategy 1: lightweight-charts library (used by some TV widgets)
-    """
-    () => {
-        try {
-            const w = window;
-            // Walk the DOM looking for chart instances
-            const charts = [];
-            if (w.Chart && typeof w.Chart.instances === 'object') {
-                for (const k of Object.keys(w.Chart.instances || {})) {
-                    const c = w.Chart.instances[k];
-                    if (c && c.data && typeof c.data === 'function') {
-                        charts.push(c);
-                    }
-                }
-            }
-            if (charts.length === 0 && w.tvWidget && w.tvWidget.activeChart) {
-                const ac = w.tvWidget.activeChart();
-                if (ac && ac.data) {
-                    charts.push(ac);
-                }
-            }
-            for (const c of charts) {
-                try {
-                    const data = c.data();
-                    if (Array.isArray(data) && data.length > 0) {
-                        return JSON.stringify(data.map(b => ({
-                            t: b.time || b.t,
-                            o: b.open !== undefined ? b.open : b.o,
-                            h: b.high !== undefined ? b.high : b.h,
-                            l: b.low !== undefined ? b.low : b.l,
-                            c: b.close !== undefined ? b.close : b.c,
-                            v: b.volume !== undefined ? b.volume : (b.v || 0)
-                        })));
-                    }
-                } catch (e) { /* try next */ }
-            }
-            return null;
-        } catch (e) {
-            return null;
+# The real bar-extraction snippet. Path discovered against the
+# user's actual TradingView Desktop via runtime introspection:
+#   _exposed_chartWidgetCollection.activeChartWidget.value()
+#     .model().mainSeries().data().bars()
+# Each call to bars.valueAt(i) returns a 6-element array
+# [unix_time, open, high, low, close, volume].
+_BAR_EXTRACTION_SNIPPET = """
+(() => {
+    const out = {size: 0, symbol: null, resolution: null, bars: []};
+    try {
+        const c = window._exposed_chartWidgetCollection;
+        if (!c) return {error: '_exposed_chartWidgetCollection not found'};
+        const active = c.activeChartWidget;
+        if (!active) return {error: 'no activeChartWidget'};
+        const real = typeof active.value === 'function' ? active.value() : active;
+        if (!real) return {error: 'cannot unwrap active chart widget'};
+        const model = real.model();
+        if (!model) return {error: 'no model'};
+        const series = model.mainSeries();
+        if (!series) return {error: 'no mainSeries'};
+        const data = series.data();
+        if (!data) return {error: 'no series.data'};
+        const bars = data.bars();
+        if (!bars) return {error: 'no data.bars()'};
+        const size = data.size();
+        if (typeof size !== 'number' || size <= 0) {
+            return {error: 'no bars', size};
         }
-    }
-    """,
-    # Strategy 2: scan for a datafeed or chart-data global
-    """
-    () => {
-        try {
-            const w = window;
-            // Some TV embeds expose chart data as a global
-            for (const key of Object.keys(w)) {
-                if (/chart.*data/i.test(key) && Array.isArray(w[key]) && w[key].length > 0) {
-                    return JSON.stringify(w[key]);
-                }
+        // Get symbol + resolution for diagnostics
+        try { out.symbol = real.getSymbol ? real.getSymbol() : null; } catch (e) {}
+        try { out.resolution = real.getResolution ? real.getResolution() : null; } catch (e) {}
+        out.size = size;
+        // Walk all bars. Use valueAt(i) which returns the raw array
+        // directly. Cap at 10000 bars to avoid serializing massive
+        // datasets (5-min × 60 days ≈ 2000 bars is the realistic max).
+        const cap = Math.min(size, 10000);
+        for (let i = 0; i < cap; i++) {
+            const arr = bars.valueAt(i);
+            if (arr && arr.length >= 5) {
+                out.bars.push({
+                    t: arr[0],
+                    o: arr[1],
+                    h: arr[2],
+                    l: arr[3],
+                    c: arr[4],
+                    v: arr[5] || 0
+                });
             }
-            return null;
-        } catch (e) {
-            return null;
         }
+    } catch (e) {
+        out.error = String(e);
     }
-    """,
-]
+    return out;
+})()
+"""
 
 
 def fetch_chart_bars(
@@ -213,13 +156,13 @@ def fetch_chart_bars(
     *,
     as_of_unix: Optional[int] = None,
 ) -> Optional[List[Bar]]:
-    """Pull OHLCV bars from the user's local TradingView Desktop via CDP.
+    """Pull OHLCV bars from the user's local TradingView Desktop via raw CDP.
 
     Returns None if:
       - No CDP endpoint is reachable at config.cdp_url
-      - No TradingView chart page is open in the connected browser
-      - All bar-extraction snippets return null
-      - The playwright CDP connect fails
+      - No TradingView chart page is open
+      - The runtime evaluation fails
+      - No bars come back
 
     On success, returns a list of Bar objects sorted by timestamp
     ascending. Bars older than `stale_after_seconds` are filtered out.
@@ -231,103 +174,88 @@ def fetch_chart_bars(
     if not pinchtab_available(config.cdp_url):
         return None
 
+    page = _find_chart_page(config.cdp_url)
+    if page is None or not page.get("webSocketDebuggerUrl"):
+        return None
+    if config.page_url_contains and config.page_url_contains not in page.get("url", ""):
+        return None
+
+    # Use raw CDP over the page's WebSocket. NOT playwright — that
+    # library hangs on the Electron app's protocol handshake.
     try:
-        from playwright.sync_api import sync_playwright
+        import websockets
     except ImportError:
         return None
 
     raw_bars: List[Bar] = []
-    chosen_page: Optional[dict] = None
+    symbol: Optional[str] = None
+    resolution: Optional[str] = None
 
-    try:
-        with sync_playwright() as p:
-            # Connect to the user's existing browser — does NOT
-            # launch a new chromium. The browser is the user's
-            # TradingView Desktop.
-            browser = p.chromium.connect_over_cdp(config.cdp_url)
-            try:
-                # Discover pages via CDP and via playwright's view
-                all_pages = []
-                for ctx in browser.contexts:
-                    for page in ctx.pages:
-                        all_pages.append(page)
-                # Pick the chart page
-                chart_page = None
-                for page in all_pages:
-                    url = page.url
-                    if config.page_url_contains and config.page_url_contains not in url:
-                        continue
-                    if "tradingview" in url.lower() or "/chart" in url.lower():
-                        chart_page = page
-                        break
-                if chart_page is None:
-                    # Fall back to CDP /json enumeration
-                    try:
-                        pages_meta = _list_pages(config.cdp_url)
-                        chosen = _pick_chart_page(pages_meta, config.page_url_contains)
-                        if chosen and chosen.get("webSocketDebuggerUrl"):
-                            # We can't easily re-attach to a CDP-only
-                            # page from playwright without it being in
-                            # the contexts; but the websocket URL is
-                            # available. For now, signal failure.
+    async def _run() -> Optional[dict]:
+        async with websockets.connect(
+            page["webSocketDebuggerUrl"], max_size=50_000_000, ping_interval=None,
+        ) as ws:
+            # Runtime.enable
+            await ws.send(json.dumps({"id": 1, "method": "Runtime.enable"}))
+            while True:
+                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                if msg.get("id") == 1:
+                    break
+
+            # Runtime.evaluate the extraction snippet
+            await ws.send(json.dumps({
+                "id": 2,
+                "method": "Runtime.evaluate",
+                "params": {
+                    "expression": _BAR_EXTRACTION_SNIPPET,
+                    "returnByValue": True,
+                },
+            }))
+            while True:
+                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
+                if msg.get("id") == 2:
+                    if "result" in msg and "result" in msg["result"]:
+                        r = msg["result"]["result"].get("value")
+                        if isinstance(r, dict) and "bars" in r:
+                            return r
+                        if isinstance(r, dict) and "error" in r:
                             return None
-                    except Exception:
                         return None
                     return None
 
-                # Try each extraction snippet in order
-                for snippet in _BAR_EXTRACTION_SNIPPETS:
-                    try:
-                        result = chart_page.evaluate(snippet)
-                    except Exception:
-                        result = None
-                    if result:
-                        try:
-                            parsed = json.loads(result)
-                        except (TypeError, json.JSONDecodeError):
-                            parsed = None
-                        if isinstance(parsed, list) and parsed:
-                            for b in parsed:
-                                try:
-                                    ts = int(b.get("t", 0))
-                                    if ts < 1_000_000_000:
-                                        ts = ts // 1000  # ms → s
-                                    if cutoff is not None and ts < cutoff:
-                                        continue
-                                    raw_bars.append(Bar(
-                                        timestamp_unix=ts,
-                                        open=float(b["o"]),
-                                        high=float(b["h"]),
-                                        low=float(b["l"]),
-                                        close=float(b["c"]),
-                                        volume=float(b.get("v", 0.0)),
-                                    ))
-                                except (KeyError, TypeError, ValueError):
-                                    continue
-                            if raw_bars:
-                                break  # first strategy that worked wins
-                        else:
-                            # Couldn't parse — try next strategy
-                            continue
-
-                if config.screenshot_path is not None:
-                    try:
-                        chart_page.screenshot(path=str(config.screenshot_path))
-                    except Exception:
-                        pass
-            finally:
-                try:
-                    browser.close()
-                except Exception:
-                    pass
-
+    try:
+        result = asyncio.run(_run())
     except Exception:
         return None
 
-    if not raw_bars:
+    if not result or "bars" not in result:
         return None
 
+    symbol = result.get("symbol")
+    resolution = result.get("resolution")
+
+    for b in result["bars"]:
+        try:
+            ts = int(b.get("t", 0))
+            # TradingView returns timestamps in Unix seconds (not ms).
+            # Modern timestamps are ~1.7e9 seconds, so we use as-is.
+            # (The previous ms-vs-seconds heuristic was wrong here.)
+            if cutoff is not None and ts < cutoff:
+                continue
+            raw_bars.append(Bar(
+                timestamp_unix=ts,
+                open=float(b["o"]),
+                high=float(b["h"]),
+                low=float(b["l"]),
+                close=float(b["c"]),
+                volume=float(b.get("v", 0.0)),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+
     raw_bars.sort(key=lambda b: b.timestamp_unix)
+    if not raw_bars:
+        return None
     return raw_bars
 
 
