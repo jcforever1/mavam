@@ -12,7 +12,10 @@
 
 set -e
 
-CRON_LINE='5 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
+CRON_LINES=(
+    '5 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
+    '6 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && /opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
+)
 
 if [[ "$1" == "--uninstall" ]]; then
     crontab -l 2>/dev/null | grep -v "mavam paper log" | crontab -
@@ -20,15 +23,31 @@ if [[ "$1" == "--uninstall" ]]; then
     exit 0
 fi
 
-# Add the cron line if not already present
-if crontab -l 2>/dev/null | grep -q "mavam paper log"; then
+# Add the cron lines if not already present
+existing=$(crontab -l 2>/dev/null || true)
+to_add=()
+for line in "${CRON_LINES[@]}"; do
+    if ! echo "$existing" | grep -qF "$line"; then
+        to_add+=("$line")
+    fi
+done
+
+if [[ ${#to_add[@]} -eq 0 ]]; then
     echo "paper-trade cron already installed; use --uninstall to remove"
     exit 0
 fi
 
-( crontab -l 2>/dev/null || true; echo "$CRON_LINE" ) | crontab -
+(
+    echo "$existing"
+    for line in "${to_add[@]}"; do
+        echo "$line"
+    done
+) | crontab -
+
 echo "paper-trade cron installed:"
-echo "  $CRON_LINE"
+for line in "${CRON_LINES[@]}"; do
+    echo "  $line"
+done
 echo
 echo "Logs: /Users/jcforever1/.local/state/mavam/paperlog/cron.log"
 echo

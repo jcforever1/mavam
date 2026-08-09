@@ -1,0 +1,8 @@
+# KO via yfinance — the original alpha-verified cell
+# Used by the daily paper-trade cron to track KO's real-time signals.
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[data]
+ticker = "KO"

@@ -425,11 +425,14 @@ def _cmd_paper_log(args: list[str]) -> int:
     if rc != EXIT_OK:
         print(buf.getvalue(), file=sys.stderr)
         return rc
+    # Parse the entire JSON output (multi-line indented). The run
+    # command writes one JSON object; the whole buffer IS the JSON.
     try:
-        payload = json.loads(buf.getvalue().strip().splitlines()[-1])
-    except (json.JSONDecodeError, IndexError):
+        payload = json.loads(buf.getvalue().strip())
+    except (json.JSONDecodeError, ValueError):
         print(
-            "paper log: could not parse run output",
+            "paper log: could not parse run output:\n"
+            + buf.getvalue()[:500],
             file=sys.stderr,
         )
         return EXIT_RUNTIME
@@ -507,11 +510,12 @@ def _cmd_paper_report(args: list[str]) -> int:
     )
     print(f"  records:     {len(records)}")
     print(f"  closed:      {pnl.n_trades}")
-    print(f"  skipped:     {pnl.skipped}")
+    print(f"  open:        {pnl.n_open}  (waiting for forward data)")
+    print(f"  skipped:     {pnl.skipped}  (HOLD/decide_no records)")
     print(f"  total PnL:   ${pnl.total_pnl:+.2f}")
     print(f"  avg PnL:     ${pnl.avg_pnl:+.2f}")
-    print(f"  win rate:    {pnl.win_rate * 100:.1f}%")
     if pnl.closed:
+        print(f"  win rate:    {pnl.win_rate * 100:.1f}%")
         by_reason: dict = {}
         for t in pnl.closed:
             by_reason.setdefault(t.exit_reason, 0)
@@ -521,6 +525,8 @@ def _cmd_paper_report(args: list[str]) -> int:
         ))
         avg_hold = sum(t.bars_held for t in pnl.closed) / len(pnl.closed)
         print(f"  avg hold:    {avg_hold:.1f} bars")
+    if pnl.n_open and not pnl.closed:
+        print("  note: open trades will close as forward bars arrive")
     return EXIT_OK
 
 

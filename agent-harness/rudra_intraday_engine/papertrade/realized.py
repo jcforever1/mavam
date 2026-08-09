@@ -36,11 +36,16 @@ class ClosedTrade:
 class RealizedPnL:
     ticker: str
     closed: List[ClosedTrade] = field(default_factory=list)
-    skipped: int = 0   # signals with no stop / no target / SELL
+    open_: List[PaperLogRecord] = field(default_factory=list)  # BUY waiting for forward data
+    skipped: int = 0   # signals with no stop / no target / SELL — can't be PnL'd
 
     @property
     def n_trades(self) -> int:
         return len(self.closed)
+
+    @property
+    def n_open(self) -> int:
+        return len(self.open_)
 
     @property
     def total_pnl(self) -> float:
@@ -111,7 +116,15 @@ def compute_realized_pnl(
     for rec in records:
         if rec.ticker.upper() != ticker:
             continue
+        if rec.action != "BUY" or rec.stop_loss is None or rec.take_profit is None:
+            # SELL or BUY without stop/target — can't be PnL'd
+            out.skipped += 1
+            continue
         bars = subsequent_by_ticker.get(ticker, [])
+        if not bars:
+            # No forward data yet — open trade
+            out.open_.append(rec)
+            continue
         # truncate to max_hold_bars
         bars = bars[:max_hold_bars]
         ct = _close_long(rec, bars)
