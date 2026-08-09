@@ -88,7 +88,7 @@ class DesktopConfig:
 
     ticker: str = ""
     timeframe: str = "1D"
-    count: int = 300
+    count: int = 0
     # Default False: do NOT navigate the chart. Just read whatever
     # the user has visible. This is critical for concurrent use:
     # if mavam's cron fires while you're using TradingView
@@ -193,14 +193,15 @@ def fetch_desktop_bars(
                     file=sys.stderr,
                 )
 
-    # The `tv` CLI truncates output at the macOS PIPE_BUF (~64K). With
-    # 5-min OHLCV averaging ~180 bytes per bar, 500-bar requests
-    # silently truncate. Cap to 300 (covers ~14 months of daily bars)
-    # and warn if the user asked for more.
-    count = min(config.count, 300)
+    # TradingView Desktop's data feed has a finite per-chart history
+    # (typically 300 daily bars, fewer for 1-min/5-min). The CLI
+    # returns whatever's available up to `count`. We pass through
+    # count=0 as "use the CLI's default" (which is 100, but the
+    # total_available in the response tells the truth).
 
+    count_arg = ["-n", str(config.count)] if config.count > 0 else []
     payload = _run_tv(
-        ["ohlcv", "-n", str(count)],
+        ["ohlcv", *count_arg],
         timeout=config.timeout,
     )
     if payload is None or not payload.get("success"):

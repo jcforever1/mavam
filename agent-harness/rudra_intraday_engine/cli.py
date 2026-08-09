@@ -181,7 +181,7 @@ def _cmd_run(args: list[str]) -> int:
             desktop_config = DesktopConfig(
                 ticker=d.get("ticker", ""),
                 timeframe=d.get("timeframe", "1D"),
-                count=int(d.get("count", 300)),
+                count=int(d.get("count", 0)),
                 switch_chart=bool(d.get("switch_chart", False)),
                 timeout=int(d.get("timeout", 30)),
             )

@@ -1,0 +1,15 @@
+# KO via the `tv` CLI (tradingview-mcp npm package) — cron-friendly
+#
+# For the daily paper-trade cron. switch_chart=true means mavam
+# WILL navigate the chart to KO before reading. Use this config
+# only if you accept that the cron will move the chart.
+#
+# For non-hijacking use, see nvda-desktop.toml (switch_chart=false).
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[data.desktop]
+ticker = "NYSE:KO"
+timeframe = "1D"
+switch_chart = true
