@@ -1,0 +1,25 @@
+# rudra-intraday-engine — TradingView chart run config
+#
+# Pulls live 5-min bars from TradingView via pinchtab (Playwright).
+# Requires:
+#   pip install rudra-intraday-engine[pinchtab]
+#   playwright install chromium
+#
+# The integration is stateless and pull-based. Each `run` launches a
+# fresh headless browser, fetches the visible bars, and closes. No
+# persistent state, no cookies, no history.
+
+[adjudicator]
+file = "../strategies/book-only.toml"
+
+[predictor]
+enabled = false
+
+[data.chart]
+ticker = "SPY"
+exchange = "NASDAQ"
+interval = "5"
+stale_after_seconds = 300
+
+# Optional: pin to a specific snapshot time (deterministic replay)
+# as_of_unix = 1754835000

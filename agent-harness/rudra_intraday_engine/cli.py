@@ -110,10 +110,38 @@ def _cmd_run(args: list[str]) -> int:
     try:
         if config.data.csv is not None:
             bars = load_bars_from_csv(config.data.csv)
+        elif config.data.chart is not None:
+            # TradingView chart via pinchtab/playwright
+            from .data import fetch_chart_bars, ChartConfig, pinchtab_available
+            if not pinchtab_available():
+                print(
+                    "data error: chart source requires playwright + chromium. "
+                    "Install with: "
+                    "pip install rudra-intraday-engine[pinchtab] && "
+                    "playwright install chromium",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
+            chart_d = config.data.chart
+            chart_config = ChartConfig(
+                ticker=chart_d.get("ticker", ""),
+                exchange=chart_d.get("exchange", "NASDAQ"),
+                interval=str(chart_d.get("interval", "5")),
+                stale_after_seconds=int(chart_d.get("stale_after_seconds", 300)),
+            )
+            bars = fetch_chart_bars(chart_config, as_of_unix=config.as_of_unix)
+            if bars is None:
+                print(
+                    f"data error: pinchtab chart fetch returned no bars "
+                    f"for {chart_config.exchange}:{chart_config.ticker}; "
+                    f"check network or TradingView availability",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
         else:
-            # For v1, only CSV is supported
+            # For v1, only CSV and chart are supported
             print(
-                f"data error: only CSV is supported in v1; "
+                f"data error: only CSV and chart sources are supported in v1; "
                 f"got ticker={config.data.ticker}, "
                 f"fixture={config.data.fixture}",
                 file=sys.stderr,
@@ -136,6 +164,9 @@ def _cmd_run(args: list[str]) -> int:
     symbol = ""
     if config.data.csv is not None:
         symbol = config.data.csv.stem.upper()
+    elif config.data.chart is not None:
+        chart_d = config.data.chart
+        symbol = f"{chart_d.get('exchange', '')}:{chart_d.get('ticker', '')}"
     entry_price = bars[-1].close
 
     # Merge

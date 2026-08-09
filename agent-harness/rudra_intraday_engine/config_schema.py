@@ -92,22 +92,34 @@ class PredictorConfig:
 class DataConfig:
     """Data source config.
 
-    Either `csv` (a path to a CSV) or `ticker` (a yfinance ticker symbol)
-    or `fixture` (a built-in test fixture name).
+    Exactly one of:
+      - `csv`   — path to a CSV file (timestamp,open,high,low,close,volume)
+      - `ticker`— yfinance ticker symbol (v1.1; CLI not yet wired)
+      - `fixture`— built-in test fixture name
+      - `chart` — TradingView chart via pinchtab/playwright.
+                  Dict with: ticker, exchange, interval, stale_after_seconds.
     """
 
     csv: Optional[Path] = None
     ticker: Optional[str] = None
     fixture: Optional[str] = None
+    chart: Optional[dict] = None
     date: Optional[str] = None  # YYYY-MM-DD, used for ticker mode
     lookback_days: int = 5
 
     def __post_init__(self) -> None:
-        sources = sum(x is not None for x in (self.csv, self.ticker, self.fixture))
+        sources = sum(
+            x is not None
+            for x in (self.csv, self.ticker, self.fixture, self.chart)
+        )
         if sources != 1:
             raise SchemaViolation(
-                f"data section: exactly one of csv, ticker, or fixture "
+                f"data section: exactly one of csv, ticker, fixture, or chart "
                 f"required, got {sources}"
+            )
+        if self.chart is not None and not isinstance(self.chart, dict):
+            raise SchemaViolation(
+                f"data.chart must be a table (dict), got {type(self.chart).__name__}"
             )
         if self.csv is not None and not self.csv.exists():
             raise SchemaViolation(
@@ -193,7 +205,9 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
         raise SchemaViolation(
             f"data section must be a table, got {type(raw).__name__}"
         )
-    unknown = set(raw.keys()) - {"csv", "ticker", "fixture", "date", "lookback_days"}
+    unknown = set(raw.keys()) - {
+        "csv", "ticker", "fixture", "chart", "date", "lookback_days"
+    }
     if unknown:
         raise SchemaViolation(
             f"data: unknown keys: {sorted(unknown)}"
@@ -211,10 +225,25 @@ def _parse_data(raw: dict[str, Any], config_dir: Path) -> DataConfig:
             csv_path = (config_dir / csv_path).resolve()
         else:
             csv_path = csv_path.resolve()
+    chart = raw.get("chart")
+    if chart is not None and not isinstance(chart, dict):
+        raise SchemaViolation(
+            f"data.chart must be a table, got {type(chart).__name__}"
+        )
+    if isinstance(chart, dict):
+        chart_allowed = {"ticker", "exchange", "interval", "stale_after_seconds"}
+        chart_unknown = set(chart.keys()) - chart_allowed
+        if chart_unknown:
+            raise SchemaViolation(
+                f"data.chart: unknown keys: {sorted(chart_unknown)}"
+            )
+        if "ticker" not in chart or not chart["ticker"]:
+            raise SchemaViolation("data.chart.ticker is required")
     return DataConfig(
         csv=csv_path,
         ticker=raw.get("ticker"),
         fixture=raw.get("fixture"),
+        chart=chart,
         date=raw.get("date"),
         lookback_days=int(raw.get("lookback_days", 5)),
     )

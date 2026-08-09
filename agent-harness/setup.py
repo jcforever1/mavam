@@ -31,12 +31,15 @@ setup(
         "click>=8.0.0",
         "pydantic>=2.0.0",
     ],
-    # Optional Kronos predictor — installed only if user opts in
+    # Optional predictor + TradingView integration — installed only if user opts in
     extras_require={
         "kronos": [
             "torch>=2.0.0",
             "numpy>=1.24.0",
             "pandas>=2.0.0",
+        ],
+        "pinchtab": [
+            "playwright>=1.40.0",
         ],
         "yfinance": [
             "yfinance>=0.2.30",
@@ -45,6 +48,7 @@ setup(
             "torch>=2.0.0",
             "numpy>=1.24.0",
             "pandas>=2.0.0",
+            "playwright>=1.40.0",
             "yfinance>=0.2.30",
         ],
     },

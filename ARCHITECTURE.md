@@ -4,7 +4,7 @@
 
 ## What this is
 
-A Python CLI that re-implements the "Mind Markets And Money" book rules (Market Profile, day types, open types, order flow) as code, with an optional Kronos ML forecasting layer, and a thin adapter for TradingView chart control. Designed to be used by an AI trading agent.
+A Python CLI that re-implements the "Mind Markets And Money" book rules (Market Profile, day types, open types, order flow) as code, with an optional Kronos ML forecasting layer, and a stateless TradingView chart adapter (pinchtab / Playwright). Designed to be used by an AI trading agent.
 
 The sibling project `cli-rudra-intraday` (the teaching CLI, 144/144 tests) is what teaches the book's content. **This project is what executes the book's rules on real data.**
 
@@ -225,7 +225,7 @@ After the bar is met, **STOP**. Do not "improve" past done. Do not add features 
 |---|---|
 | Book is intuition, not spec | The Adjudicator is data. Users can audit the merge, not just the code. |
 | Kronos unverified for 5-min | Predictor is optional + gated by config. Same Adjudicator works with or without. |
-| pinchtab SPOF | TradingView integration is pull-based, stateless, with explicit `stale_after_unix`. The CLI never pushes. |
+| pinchtab SPOF | TradingView integration is pull-based, stateless, with explicit `stale_after_unix`. The CLI never pushes. Shipped as `data/pinchtab.py` + `[data.chart]` TOML section. Requires `pip install rudra-intraday-engine[pinchtab] && playwright install chromium`. |
 | Auditability collapse | TradeSignal carries provenance chain. `rudra-intraday verify <hash>` regenerates and asserts. |
 | 22-30 hr build | The Adjudicator + Artifact + Content-Addressed State is the durable work. The book engine is the differentiating work. |
 | JC waived the Book-Signature Test | Foundation risk is on JC. The architecture is robust to ambiguous book rules because the Adjudicator is explicit policy, not compiled-from-book code. |
