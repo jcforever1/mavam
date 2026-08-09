@@ -135,31 +135,32 @@ def _cmd_run(args: list[str]) -> int:
                 )
                 return EXIT_DATA
         elif config.data.chart is not None:
-            # TradingView chart via pinchtab/playwright
+            # pinchtab: CDP connection to the user's local TradingView
+            # Desktop running with --remote-debugging-port=9222.
             from .data import fetch_chart_bars, ChartConfig, pinchtab_available
-            if not pinchtab_available():
-                print(
-                    "data error: chart source requires playwright + chromium. "
-                    "Install with: "
-                    "pip install rudra-intraday-engine[pinchtab] && "
-                    "playwright install chromium. "
-                    "Or use [data] ticker=... with yfinance for an HTTP-only path.",
-                    file=sys.stderr,
-                )
-                return EXIT_DATA
             chart_d = config.data.chart
             chart_config = ChartConfig(
                 ticker=chart_d.get("ticker", ""),
                 exchange=chart_d.get("exchange", "NASDAQ"),
                 interval=str(chart_d.get("interval", "5")),
-                stale_after_seconds=int(chart_d.get("stale_after_seconds", 300)),
+                stale_after_seconds=int(chart_d.get("stale_after_seconds", 0)),
+                cdp_url=chart_d.get("cdp_url", "http://localhost:9222"),
+                page_url_contains=chart_d.get("page_url_contains"),
             )
+            if not pinchtab_available(chart_config.cdp_url):
+                print(
+                    f"data error: no TradingView Desktop reachable at "
+                    f"{chart_config.cdp_url}. Start your desktop app with "
+                    f"--remote-debugging-port=9222, or use [data] ticker=... "
+                    f"with yfinance for an HTTP-only path.",
+                    file=sys.stderr,
+                )
+                return EXIT_DATA
             bars = fetch_chart_bars(chart_config, as_of_unix=config.as_of_unix)
             if bars is None:
                 print(
-                    f"data error: pinchtab chart fetch returned no bars "
-                    f"for {chart_config.exchange}:{chart_config.ticker}; "
-                    f"check network or TradingView availability",
+                    f"data error: pinchtab chart fetch returned no bars; "
+                    f"is a chart open in the connected TradingView Desktop?",
                     file=sys.stderr,
                 )
                 return EXIT_DATA

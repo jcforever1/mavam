@@ -1,7 +1,8 @@
-"""Data package — CSV + yfinance (HTTP) + pinchtab/TradingView (playwright) loaders."""
+"""Data package — CSV + yfinance (HTTP) + pinchtab (local CDP) loaders."""
 
 from .loader import DataLoadError, load_bars_from_csv
 from .pinchtab import (
+    DEFAULT_CDP_URL,
     DEFAULT_STALE_AFTER_SECONDS as PINCHTAB_STALE_AFTER_SECONDS,
     ChartConfig,
     fetch_chart_bars,
@@ -18,6 +19,7 @@ __all__ = [
     "DataLoadError",
     "load_bars_from_csv",
     "ChartConfig",
+    "DEFAULT_CDP_URL",
     "PINCHTAB_STALE_AFTER_SECONDS",
     "fetch_chart_bars",
     "pinchtab_available",
