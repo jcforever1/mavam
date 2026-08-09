@@ -65,6 +65,8 @@ def main(argv: Sequence[str]) -> int:
         return _cmd_predict(rest)
     if cmd == "paper":
         return _cmd_paper(rest)
+    if cmd == "stream":
+        return _cmd_stream(rest)
     if cmd in ("-h", "--help", "help"):
         _print_usage()
         return EXIT_OK
@@ -642,6 +644,113 @@ def _cmd_paper_replay(args: list[str]) -> int:
 # ── helpers ──────────────────────────────────────────────────────────
 
 
+def _cmd_stream(args: list[str]) -> int:
+    """Stream live data from the user's TradingView Desktop.
+
+    `rudra-intraday stream <sub> [-i MS] [--pretty] [--output PATH] [--max-records N]`
+
+    Subs: quote, bars, values, lines, labels, tables, all
+    Default output: JSONL to stdout (one record per line).
+    Use --pretty for human-readable indented output.
+    Use --output to write to a file.
+    Use --max-records to stop after N records (default: run forever).
+    Use -i / --interval to set poll interval in ms.
+    """
+    from .data import (
+        VALID_STREAMS,
+        stream_tv,
+        stream_tv_to_file,
+        tv_cli_available,
+    )
+
+    if not args:
+        print(
+            f"usage: rudra-intraday stream <sub> [options]\n"
+            f"  subs: {', '.join(VALID_STREAMS)}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    sub = args[0]
+    if sub not in VALID_STREAMS:
+        print(
+            f"stream: invalid sub {sub!r}; must be one of {VALID_STREAMS}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    interval_ms = 500
+    pretty = False
+    output_path = None
+    max_records = None
+    i = 1
+    while i < len(args):
+        a = args[i]
+        if a in ("-i", "--interval") and i + 1 < len(args):
+            interval_ms = int(args[i + 1])
+            i += 2
+        elif a == "--pretty":
+            pretty = True
+            i += 1
+        elif a == "--output" and i + 1 < len(args):
+            output_path = args[i + 1]
+            i += 2
+        elif a == "--max-records" and i + 1 < len(args):
+            max_records = int(args[i + 1])
+            i += 2
+        elif a in ("-h", "--help"):
+            print(
+                f"usage: rudra-intraday stream <sub> [options]\n"
+                f"  subs: {', '.join(VALID_STREAMS)}\n"
+                f"  -i MS        poll interval in ms (default 500)\n"
+                f"  --pretty     indented human output (default JSONL)\n"
+                f"  --output P   write to file (default stdout)\n"
+                f"  --max-records N   stop after N records\n",
+                file=sys.stderr,
+            )
+            return EXIT_OK
+        else:
+            i += 1
+
+    if not tv_cli_available():
+        print(
+            "stream error: tv CLI not found; install with "
+            "`npm install -g tradingview-mcp`",
+            file=sys.stderr,
+        )
+        return EXIT_RUNTIME
+
+    if output_path:
+        # File mode
+        n = stream_tv_to_file(
+            sub,
+            interval_ms=interval_ms,
+            output_path=output_path,
+            max_records=max_records,
+        )
+        print(f"stream: wrote {n} records to {output_path}", file=sys.stderr)
+        return EXIT_OK
+
+    # stdout mode
+    count = 0
+    try:
+        for record in stream_tv(sub, interval_ms=interval_ms):
+            if pretty:
+                print(json.dumps(record, indent=2))
+            else:
+                print(json.dumps(record, separators=(",", ":")))
+            sys.stdout.flush()
+            count += 1
+            if max_records is not None and count >= max_records:
+                break
+    except KeyboardInterrupt:
+        print(f"\nstream: stopped after {count} records", file=sys.stderr)
+    return EXIT_OK
+
+
+# ── helpers ──────────────────────────────────────────────────────────
+
+
 def _print_usage() -> None:
     print(
         """rudra-intraday — re-implements the "Mind Markets And Money" rules
@@ -655,6 +764,9 @@ Usage:
     rudra-intraday paper report <ticker>   Compute realized P&L from the log
     rudra-intraday paper replay <ticker>   Replay a strategy historically
                                            --config <config.toml>
+    rudra-intraday stream <sub>            Live JSONL from TradingView Desktop
+                                           subs: quote, bars, values, lines,
+                                                 labels, tables, all
 
 Options:
     -h, --help       Show this help
