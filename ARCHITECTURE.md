@@ -1,3 +1,10 @@
+# mavam — Architecture
+
+> **Renamed from `rudra-intraday-engine` to `mavam` on 2026-08-09 to
+> avoid name collision with the sibling project `cli-rudra-intraday`
+> (the teaching CLI). The book is "MIND MARKETS AND MONEY" — `mavam`
+> is the natural acronym.**
+
 # rudra-intraday-engine — Architecture
 
 > The "ship finished" plan for v1. This is the design JC greenlit on 2026-08-08, after the Idea Roast Council rendered FIX FIRST (twice) and the user explicitly waived the Book-Signature Test preflight.
@@ -226,6 +233,14 @@ After the bar is met, **STOP**. Do not "improve" past done. Do not add features 
 | Book is intuition, not spec | The Adjudicator is data. Users can audit the merge, not just the code. |
 | Kronos unverified for 5-min | Predictor is optional + gated by config. Same Adjudicator works with or without. |
 | pinchtab SPOF | TradingView integration is pull-based, stateless, with explicit `stale_after_unix`. The CLI never pushes. Shipped as `data/pinchtab.py` + `[data.chart]` TOML section. **pinchtab is a CDP client to the user's *local* TradingView Desktop** running with `--remote-debugging-port=9222` — not a scraper of TradingView's servers. The user must start their desktop with that flag; the engine then connects via `playwright.connect_over_cdp("http://localhost:9222")`. yfinance is the alternative data source for when no desktop is running. |
+
+## Data sources (3 options, in priority order)
+
+| Source | Substrate | When to use | ToS |
+|---|---|---|---|
+| **yfinance** | HTTP, no browser | Default. Real Yahoo Finance data, well-maintained, no browser needed. `pip install rudra-intraday-engine[yfinance]` | Yahoo API terms |
+| **pinchtab** | CDP to local TradingView Desktop | When you specifically want TradingView's chart data from your own local desktop app. `pip install rudra-intraday-engine[pinchtab]` | TradingView ToS restricts automated use of extracted data; user accepts |
+| **crawl4ai** (v1.1) | HTTP scraping via [unclecode/crawl4ai](https://github.com/unclecode/crawl4ai) | When the user wants to scrape non-API sources (MarketWatch, Investing.com, custom sites). Future addition. | Per-site ToS |
 | Auditability collapse | TradeSignal carries provenance chain. `rudra-intraday verify <hash>` regenerates and asserts. |
 | 22-30 hr build | The Adjudicator + Artifact + Content-Addressed State is the durable work. The book engine is the differentiating work. |
 | JC waived the Book-Signature Test | Foundation risk is on JC. The architecture is robust to ambiguous book rules because the Adjudicator is explicit policy, not compiled-from-book code. |
