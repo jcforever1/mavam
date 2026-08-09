@@ -182,7 +182,7 @@ def _cmd_run(args: list[str]) -> int:
                 ticker=d.get("ticker", ""),
                 timeframe=d.get("timeframe", "1D"),
                 count=int(d.get("count", 300)),
-                switch_chart=bool(d.get("switch_chart", True)),
+                switch_chart=bool(d.get("switch_chart", False)),
                 timeout=int(d.get("timeout", 30)),
             )
             if not tv_cli_available():

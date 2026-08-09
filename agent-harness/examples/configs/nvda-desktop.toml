@@ -8,6 +8,11 @@
 # It uses the same CDP bridge as pinchtab but exposes a much richer
 # surface: real-time quote, indicator values, screenshots, Pine
 # Script tools, chart drawings, alerts, watchlists, multi-pane.
+#
+# Concurrent use: by default (switch_chart=false), mavam reads
+# whatever chart you have visible without navigating. Set
+# switch_chart=true to drive the chart (useful for sweeps, not
+# for cron or interactive use).
 
 [adjudicator]
 file = "../strategies/book-only.toml"
@@ -15,5 +20,9 @@ file = "../strategies/book-only.toml"
 [data.desktop]
 ticker = "BATS:NVDA"
 timeframe = "1D"
-count = 500
-switch_chart = true
+count = 300
+# Default false: do NOT navigate the chart. The user controls
+# the chart; mavam reads whatever's visible. This is critical
+# for concurrent use — mavam's cron and your interactive session
+# can run side-by-side without mavam hijacking your view.
+switch_chart = false

@@ -26,7 +26,7 @@ def test_desktop_config_defaults():
     assert c.ticker == "NVDA"
     assert c.timeframe == "1D"
     assert c.count == 300  # capped at 300 to avoid PIPE_BUF truncation
-    assert c.switch_chart is True
+    assert c.switch_chart is False  # default: don't hijack the chart
     assert c.timeout == 30
 
 

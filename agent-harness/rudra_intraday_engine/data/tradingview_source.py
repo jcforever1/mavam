@@ -89,7 +89,14 @@ class DesktopConfig:
     ticker: str = ""
     timeframe: str = "1D"
     count: int = 300
-    switch_chart: bool = True
+    # Default False: do NOT navigate the chart. Just read whatever
+    # the user has visible. This is critical for concurrent use:
+    # if mavam's cron fires while you're using TradingView
+    # interactively, the default behavior is "do nothing visible"
+    # rather than "hijack your chart". Set True only when you
+    # explicitly want mavam to drive the chart (e.g. backtest
+    # sweeps over many tickers).
+    switch_chart: bool = False
     timeout: int = 30
 
 
@@ -166,6 +173,25 @@ def fetch_desktop_bars(
     if config.switch_chart:
         if not _switch_chart(config.ticker, config.timeframe, config.timeout):
             return None
+    elif config.ticker:
+        # switch_chart=False but ticker is set: validate that the
+        # current chart matches what the user asked for. If not,
+        # warn (don't switch — that would hijack).
+        state = _run_tv(["state"], timeout=config.timeout)
+        if state:
+            cur_sym = str(state.get("symbol", "")).upper()
+            if config.ticker.upper() != cur_sym:
+                # Stderr-style warning, not raised — concurrent use
+                # is allowed, the user knows their chart.
+                import sys
+                print(
+                    f"warning: data.desktop.ticker={config.ticker!r} but "
+                    f"current chart is {cur_sym!r}; reading bars for "
+                    f"the visible chart, not the requested ticker. "
+                    f"Set switch_chart=true to navigate, or open the "
+                    f"correct chart in TradingView.",
+                    file=sys.stderr,
+                )
 
     # The `tv` CLI truncates output at the macOS PIPE_BUF (~64K). With
     # 5-min OHLCV averaging ~180 bytes per bar, 500-bar requests
