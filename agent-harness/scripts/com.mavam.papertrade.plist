@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mavam.papertrade</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness \
+  &amp;&amp; /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml \
+  &amp;&amp; /opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml
+        </string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>5</integer>
+            <key>Weekday</key>
+            <integer>1</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>5</integer>
+            <key>Weekday</key>
+            <integer>2</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>5</integer>
+            <key>Weekday</key>
+            <integer>3</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>5</integer>
+            <key>Weekday</key>
+            <integer>4</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>5</integer>
+            <key>Weekday</key>
+            <integer>5</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>6</integer>
+            <key>Weekday</key>
+            <integer>1</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>6</integer>
+            <key>Weekday</key>
+            <integer>2</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>6</integer>
+            <key>Weekday</key>
+            <integer>3</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>6</integer>
+            <key>Weekday</key>
+            <integer>4</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>6</integer>
+            <key>Weekday</key>
+            <integer>5</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jcforever1/.local/state/mavam/paperlog/cron.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jcforever1/.local/state/mavam/paperlog/cron.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -74,7 +74,7 @@ Users can write their own adjudicator TOMLs and share them. The engine doesn't c
 - `explain` / `verify` / `replay` / `audit` for on-call
 - `paper log` / `paper report` / `paper replay` for paper-trade tracking
 - 50-ticker walk-forward sweep (KO, XLF, XLK, MSFT, MSTR, COST, GOOGL, AAPL, KMB, MDLZ, ABBV, PLTR, PFE, GIS, IWM, COP, BLK, XLE, …)
-- 149+ tests, 5 historical US fixtures, reference trading bot, installable daily cron for paper-trade logging
+- 149+ tests, 5 historical US fixtures, reference trading bot, installable daily launchd scheduler for paper-trade logging (16:05 ET SPY / 16:06 ET KO, Mon-Fri)
 
 ## Kronos feasibility verdict (2026-08-09)
 
