@@ -29,6 +29,11 @@ from ..core.profile import Bar
 
 DEFAULT_STALE_AFTER_SECONDS = 300
 
+# Retry policy for transient Yahoo Finance failures (429 rate limits,
+# empty responses, brief network blips). 3 attempts, backoff 1s/2s.
+YF_FETCH_RETRIES = 3
+YF_FETCH_BACKOFF_SECONDS = 1.0
+
 
 @dataclass(frozen=True)
 class YFinanceConfig:
@@ -79,14 +84,29 @@ def fetch_yfinance_bars(
     apply_staleness = config.stale_after_seconds > 0
     cutoff = as_of - config.stale_after_seconds if apply_staleness else None
 
-    try:
-        t = yf.Ticker(config.ticker)
-        hist = t.history(period=config.period, interval=config.interval)
-    except Exception:
+    # Transient fetch resilience: Yahoo sometimes hiccups (429/empty
+    # responses). Retry a few times with short backoff before giving up —
+    # a 16:05 daily paper-log run failing on one bad call silently loses
+    # the signal for the day (observed 2026-08-13: SPY "possibly delisted"
+    # with zero bars; retry succeeds seconds later).
+    last_hist = None
+    for attempt in range(YF_FETCH_RETRIES):
+        try:
+            t = yf.Ticker(config.ticker)
+            hist = t.history(period=config.period, interval=config.interval)
+            if hist is not None and not hist.empty:
+                last_hist = hist
+                break
+            last_hist = None
+        except Exception:
+            last_hist = None
+        if attempt + 1 < YF_FETCH_RETRIES:
+            time.sleep(YF_FETCH_BACKOFF_SECONDS * (attempt + 1))
+
+    if last_hist is None:
         return None
 
-    if hist is None or hist.empty:
-        return None
+    hist = last_hist
 
     raw_bars: List[Bar] = []
     for idx, row in hist.iterrows():

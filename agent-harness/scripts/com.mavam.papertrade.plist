@@ -10,9 +10,9 @@
         <string>/bin/bash</string>
         <string>-c</string>
         <string>
-cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness \
-  &amp;&amp; /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml \
-  &amp;&amp; /opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml
+cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness || exit 1
+/opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml
+/opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml
         </string>
     </array>
 
