@@ -20,6 +20,15 @@ cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-h
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- yfinance wake-catch-up budget: a fire landing right after
+             sleep/wake can need several minutes for Yahoo data to be
+             available again (observed Aug 13/14/19/20). -->
+        <key>YF_FETCH_RETRIES</key>
+        <string>8</string>
+        <key>YF_FETCH_BACKOFF_SECONDS</key>
+        <string>5</string>
+        <key>YF_FETCH_MAX_BACKOFF_SECONDS</key>
+        <string>60</string>
     </dict>
 
     <key>WorkingDirectory</key>
@@ -64,46 +73,6 @@ cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-h
             <integer>16</integer>
             <key>Minute</key>
             <integer>5</integer>
-            <key>Weekday</key>
-            <integer>5</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>16</integer>
-            <key>Minute</key>
-            <integer>6</integer>
-            <key>Weekday</key>
-            <integer>1</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>16</integer>
-            <key>Minute</key>
-            <integer>6</integer>
-            <key>Weekday</key>
-            <integer>2</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>16</integer>
-            <key>Minute</key>
-            <integer>6</integer>
-            <key>Weekday</key>
-            <integer>3</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>16</integer>
-            <key>Minute</key>
-            <integer>6</integer>
-            <key>Weekday</key>
-            <integer>4</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>16</integer>
-            <key>Minute</key>
-            <integer>6</integer>
             <key>Weekday</key>
             <integer>5</integer>
         </dict>

@@ -32,6 +32,7 @@ from .orderflow_install import install_orderflow
 from .yfinance_source import (
     DEFAULT_STALE_AFTER_SECONDS as YFINANCE_STALE_AFTER_SECONDS,
     YF_FETCH_BACKOFF_SECONDS,
+    YF_FETCH_MAX_BACKOFF_SECONDS,
     YF_FETCH_RETRIES,
     YFinanceConfig,
     fetch_yfinance_bars,
@@ -65,6 +66,7 @@ __all__ = [
     "YFINANCE_STALE_AFTER_SECONDS",
     "YF_FETCH_RETRIES",
     "YF_FETCH_BACKOFF_SECONDS",
+    "YF_FETCH_MAX_BACKOFF_SECONDS",
     "fetch_yfinance_bars",
     "yfinance_available",
 ]

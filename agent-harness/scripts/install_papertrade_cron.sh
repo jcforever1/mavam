@@ -2,8 +2,8 @@
 # Install the daily paper-trade logging job.
 #
 # On macOS this installs a launchd LaunchAgent (com.mavam.papertrade)
-# that runs `mavam paper log` for SPY at 16:05 ET and KO at 16:06 ET
-# on weekdays (just after US market close).
+# that runs `mavam paper log` for SPY and KO at 16:05 ET on weekdays
+# (just after US market close), independently and idempotently.
 #
 # launchd is preferred over crontab on macOS because:
 #   * crontab is a wedged system daemon on some macOS versions — jobs
@@ -28,8 +28,8 @@ UID_N="$(id -u)"
 LOG="/Users/jcforever1/.local/state/mavam/paperlog/cron.log"
 
 CRON_LINES=(
-    '5 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
-    '6 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && /opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
+    '5 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && YF_FETCH_RETRIES=8 YF_FETCH_BACKOFF_SECONDS=5 /opt/homebrew/bin/mavam paper log examples/configs/spy-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
+    '5 16 * * 1-5 cd /Users/jcforever1/.mavis/agents/mavis/workspace/rudra-intraday-engine/agent-harness && YF_FETCH_RETRIES=8 YF_FETCH_BACKOFF_SECONDS=5 /opt/homebrew/bin/mavam paper log examples/configs/ko-yfinance.toml >> /Users/jcforever1/.local/state/mavam/paperlog/cron.log 2>&1'
 )
 
 cron_uninstall() {
@@ -75,7 +75,7 @@ launchd_install() {
     launchctl bootstrap "gui/$UID_N" "$PLIST_DST"
     launchctl enable "gui/$UID_N/$LABEL" >/dev/null 2>&1 || true
     echo "launchd agent installed: $LABEL"
-    echo "  runs: 16:05 ET SPY + 16:06 ET KO, Mon-Fri"
+    echo "  runs: 16:05 ET SPY + KO, Mon-Fri (independent, idempotent)"
     echo "  logs: $LOG"
     echo "  verify: launchctl list | grep $LABEL"
 }

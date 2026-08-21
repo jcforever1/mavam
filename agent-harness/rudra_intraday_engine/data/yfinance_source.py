@@ -19,10 +19,11 @@ Requires:
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from ..core.profile import Bar
 
@@ -30,9 +31,36 @@ from ..core.profile import Bar
 DEFAULT_STALE_AFTER_SECONDS = 300
 
 # Retry policy for transient Yahoo Finance failures (429 rate limits,
-# empty responses, brief network blips). 3 attempts, backoff 1s/2s.
+# empty responses, brief network blips — e.g. a scheduled fire landing
+# right after the Mac wakes from sleep).
+#
+# Defaults: 3 attempts, backoff 1s/2s (exponential, capped).
+# The launchd scheduler overrides via environment (see the plist):
+#   YF_FETCH_RETRIES            total attempts
+#   YF_FETCH_BACKOFF_SECONDS    base backoff, doubled per attempt
+#   YF_FETCH_MAX_BACKOFF_SECONDS  per-sleep cap (default 60s)
+# A post-sleep-wake fire can land up to ~30-50 min late; a 1s/2s
+# retry covers blips but not that window, so the scheduler widens it.
 YF_FETCH_RETRIES = 3
 YF_FETCH_BACKOFF_SECONDS = 1.0
+YF_FETCH_MAX_BACKOFF_SECONDS = 60.0
+
+
+def _retry_policy() -> Tuple[int, float, float]:
+    """Resolve the retry policy from env overrides (else defaults).
+
+    Read at call time (not import time) so the scheduler plist can
+    widen the budget and tests can patch os.environ.
+    """
+    return (
+        int(os.environ.get("YF_FETCH_RETRIES", YF_FETCH_RETRIES)),
+        float(os.environ.get("YF_FETCH_BACKOFF_SECONDS", YF_FETCH_BACKOFF_SECONDS)),
+        float(
+            os.environ.get(
+                "YF_FETCH_MAX_BACKOFF_SECONDS", YF_FETCH_MAX_BACKOFF_SECONDS
+            )
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -85,12 +113,14 @@ def fetch_yfinance_bars(
     cutoff = as_of - config.stale_after_seconds if apply_staleness else None
 
     # Transient fetch resilience: Yahoo sometimes hiccups (429/empty
-    # responses). Retry a few times with short backoff before giving up —
+    # responses). Retry with exponential capped backoff before giving up —
     # a 16:05 daily paper-log run failing on one bad call silently loses
     # the signal for the day (observed 2026-08-13: SPY "possibly delisted"
-    # with zero bars; retry succeeds seconds later).
+    # with zero bars; retry succeeds seconds later; post-sleep-wake fires
+    # on Aug 13/14/19/20 needed a wider scheduler budget).
+    retries, backoff, max_backoff = _retry_policy()
     last_hist = None
-    for attempt in range(YF_FETCH_RETRIES):
+    for attempt in range(retries):
         try:
             t = yf.Ticker(config.ticker)
             hist = t.history(period=config.period, interval=config.interval)
@@ -100,8 +130,8 @@ def fetch_yfinance_bars(
             last_hist = None
         except Exception:
             last_hist = None
-        if attempt + 1 < YF_FETCH_RETRIES:
-            time.sleep(YF_FETCH_BACKOFF_SECONDS * (attempt + 1))
+        if attempt + 1 < retries:
+            time.sleep(min(backoff * (2 ** attempt), max_backoff))
 
     if last_hist is None:
         return None

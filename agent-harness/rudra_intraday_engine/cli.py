@@ -16,6 +16,7 @@ This is Branch C of the architecture — minimal attack surface.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -436,12 +437,21 @@ def _cmd_paper(args: list[str]) -> int:
 def _cmd_paper_log(args: list[str]) -> int:
     """Run a strategy and append a record to today's paper-trade log.
 
-    `rudra-intraday paper log <config.toml>`
+    `rudra-intraday paper log <config.toml> [--force]`
+
+    Idempotent per (ticker, day): a second run on the same day for the
+    same ticker skips (no duplicate records from double-fired cron /
+    manual re-runs). `--force` overrides the guard.
     """
-    if len(args) != 1:
-        print("usage: rudra-intraday paper log <config.toml>", file=sys.stderr)
+    force = "--force" in args
+    positional = [a for a in args if a != "--force"]
+    if len(positional) != 1:
+        print(
+            "usage: rudra-intraday paper log <config.toml> [--force]",
+            file=sys.stderr,
+        )
         return EXIT_USAGE
-    config_path = args[0]
+    config_path = positional[0]
     try:
         config = load_config_from_argv([config_path])
     except (ArgvError, TomlParseError, SchemaViolation, FileNotFoundError) as e:
@@ -466,6 +476,26 @@ def _cmd_paper_log(args: list[str]) -> int:
             file=sys.stderr,
         )
         return EXIT_CONFIG
+
+    # Idempotency guard: only one `run` record per (ticker, day). The
+    # launchd scheduler fires once per weekday at 16:05; a double-fire
+    # or a manual re-run must never append a duplicate (observed Aug
+    # 17/18: double-scheduled plist logged every signal twice).
+    from .papertrade import DEFAULT_LOG_DIR, read_records
+    from datetime import datetime, timezone
+
+    log_dir = Path(os.environ.get("MAVAM_PAPERLOG_DIR", str(DEFAULT_LOG_DIR)))
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if not force:
+        existing = read_records(
+            log_dir=log_dir, since_day=today, until_day=today, ticker=ticker
+        )
+        if any(r.source == "run" for r in existing):
+            print(
+                f"paper log: skip {ticker} (already logged today; use --force to override)",
+                file=sys.stderr,
+            )
+            return EXIT_OK
 
     # Reuse the run pipeline by calling _cmd_run, but capture the JSON output
     import io
@@ -507,7 +537,7 @@ def _cmd_paper_log(args: list[str]) -> int:
         decide_no_reasons=list(payload.get("decide_no_reasons", [])),
         source="run",
     )
-    path = append_record(rec)
+    path = append_record(rec, log_dir=log_dir)
     print(f"paper log: appended {ticker} {rec.action} @ {rec.entry_price} → {path}")
     return EXIT_OK
 

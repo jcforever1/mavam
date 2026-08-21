@@ -152,6 +152,95 @@ class TestCliRunEndToEnd(unittest.TestCase):
         code = main(["rudra-intraday", "run", "--flag", "config.toml"])
         self.assertEqual(code, EXIT_USAGE)
 
+    def test_paper_log_idempotent_per_day(self):
+        """A second `paper log` run for the same ticker the same day must
+        skip; --force overrides. Guards against double-fired schedulers
+        (observed 2026-08-17/18: every signal logged twice)."""
+        import io
+        import json as _json
+        import os
+        import sys
+        import tempfile as tf
+        from contextlib import redirect_stderr, redirect_stdout
+
+        with tf.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            (tmp / "configs").mkdir()
+            (tmp / "strategies").mkdir()
+            (tmp / "data").mkdir()
+            repo = Path(__file__).parent.parent
+            (tmp / "strategies" / "book-only.toml").write_text(
+                (repo / "examples" / "strategies" / "book-only.toml").read_text()
+            )
+            (tmp / "data" / "TEST.csv").write_text(
+                "timestamp,open,high,low,close,volume\n"
+                "2026-08-10T13:30:00Z,100.00,100.50,99.75,100.25,10000\n"
+                "2026-08-10T14:00:00Z,100.25,101.50,100.25,101.25,12500\n"
+                "2026-08-10T14:30:00Z,101.25,102.50,101.00,102.25,13800\n"
+                "2026-08-10T15:00:00Z,102.25,103.00,102.00,102.75,14200\n"
+                "2026-08-10T15:30:00Z,102.75,103.50,102.50,103.25,13500\n"
+                "2026-08-10T16:00:00Z,103.25,104.00,103.00,103.75,12800\n"
+                "2026-08-10T16:30:00Z,103.75,104.50,103.50,104.25,13200\n"
+                "2026-08-10T17:00:00Z,104.25,105.00,104.00,104.75,14100\n"
+                "2026-08-10T17:30:00Z,104.75,105.50,104.50,105.25,13800\n"
+                "2026-08-10T18:00:00Z,105.25,106.00,105.00,105.75,13500\n"
+                "2026-08-10T18:30:00Z,105.75,106.50,105.50,106.25,12800\n"
+                "2026-08-10T19:00:00Z,106.25,106.50,105.75,105.85,11200\n"
+            )
+            toml_path = tmp / "configs" / "run.toml"
+            toml_path.write_text(
+                "[adjudicator]\n"
+                "file = \"../strategies/book-only.toml\"\n"
+                "\n"
+                "[predictor]\n"
+                "enabled = false\n"
+                "\n"
+                "[data]\n"
+                "csv = \"../data/TEST.csv\"\n"
+            )
+
+            log_dir = tmp / "paperlog"
+            os.environ["MAVAM_PAPERLOG_DIR"] = str(log_dir)
+            try:
+                # First run appends
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    code1 = main(["rudra-intraday", "paper", "log", str(toml_path)])
+                self.assertEqual(code1, EXIT_OK, f"first: {buf.getvalue()}")
+                log_files = list(log_dir.glob("*.jsonl"))
+                self.assertEqual(len(log_files), 1)
+                lines1 = log_files[0].read_text().strip().splitlines()
+                self.assertEqual(len(lines1), 1)
+                rec = _json.loads(lines1[0])
+                self.assertEqual(rec["ticker"], "TEST")
+                self.assertEqual(rec["source"], "run")
+                first_action = rec["action"]
+
+                # Second run same day: SKIP, append nothing
+                buf2 = io.StringIO()
+                err2 = io.StringIO()
+                with redirect_stdout(buf2), redirect_stderr(err2):
+                    code2 = main(["rudra-intraday", "paper", "log", str(toml_path)])
+                self.assertEqual(code2, EXIT_OK, f"second: {err2.getvalue()}")
+                self.assertIn("skip", err2.getvalue().lower())
+                lines_after = log_files[0].read_text().strip().splitlines()
+                self.assertEqual(len(lines_after), 1)
+
+                # --force appends a second record
+                buf3 = io.StringIO()
+                err3 = io.StringIO()
+                with redirect_stdout(buf3), redirect_stderr(err3):
+                    code3 = main(
+                        ["rudra-intraday", "paper", "log", str(toml_path), "--force"]
+                    )
+                self.assertEqual(code3, EXIT_OK, f"force: {err3.getvalue()}")
+                self.assertNotIn("skip", err3.getvalue().lower())
+                lines_forced = log_files[0].read_text().strip().splitlines()
+                self.assertEqual(len(lines_forced), 2)
+                self.assertEqual(_json.loads(lines_forced[1])["action"], first_action)
+            finally:
+                os.environ.pop("MAVAM_PAPERLOG_DIR", None)
+
 
 if __name__ == "__main__":
     unittest.main()

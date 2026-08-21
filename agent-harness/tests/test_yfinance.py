@@ -7,6 +7,7 @@ from unittest import mock
 
 from rudra_intraday_engine.data import (
     YF_FETCH_BACKOFF_SECONDS,
+    YF_FETCH_MAX_BACKOFF_SECONDS,
     YF_FETCH_RETRIES,
     YFinanceConfig,
     YFINANCE_STALE_AFTER_SECONDS,
@@ -142,6 +143,66 @@ class TestFetchYFinanceBars(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(mock_ticker.return_value.history.call_count, YF_FETCH_RETRIES)
         self.assertEqual(mock_sleep.call_count, YF_FETCH_RETRIES - 1)
+
+    def test_env_override_widens_retry_budget(self):
+        """The scheduler plist can widen the retry budget via env vars —
+        a post-sleep-wake fire needs a longer window than the 1s/2s
+        default (observed 2026-08-13/14/19/20)."""
+        import os
+        import pandas as pd
+
+        with mock.patch.dict(
+            os.environ,
+            {"YF_FETCH_RETRIES": "8", "YF_FETCH_BACKOFF_SECONDS": "5"},
+            clear=False,
+        ):
+            with mock.patch("yfinance.Ticker") as mock_ticker:
+                mock_ticker.return_value.history = mock.Mock(
+                    return_value=pd.DataFrame()
+                )
+                with mock.patch(
+                    "rudra_intraday_engine.data.yfinance_source.time.sleep"
+                ) as mock_sleep:
+                    result = fetch_yfinance_bars(
+                        YFinanceConfig(ticker="SPY", period="5d", stale_after_seconds=0)
+                    )
+
+        self.assertIsNone(result)
+        self.assertEqual(mock_ticker.return_value.history.call_count, 8)
+        # 7 sleeps: 5, 10, 20, 40, 60 (capped), 60, 60
+        self.assertEqual(mock_sleep.call_count, 7)
+        sleeps = [c.args[0] for c in mock_sleep.call_args_list]
+        self.assertEqual(sleeps, [5, 10, 20, 40, 60, 60, 60])
+
+    def test_max_backoff_cap_applies(self):
+        """Exponential backoff is capped at YF_FETCH_MAX_BACKOFF_SECONDS."""
+        import os
+        import pandas as pd
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "YF_FETCH_RETRIES": "6",
+                "YF_FETCH_BACKOFF_SECONDS": "2",
+                "YF_FETCH_MAX_BACKOFF_SECONDS": "5",
+            },
+            clear=False,
+        ):
+            with mock.patch("yfinance.Ticker") as mock_ticker:
+                mock_ticker.return_value.history = mock.Mock(
+                    return_value=pd.DataFrame()
+                )
+                with mock.patch(
+                    "rudra_intraday_engine.data.yfinance_source.time.sleep"
+                ) as mock_sleep:
+                    result = fetch_yfinance_bars(
+                        YFinanceConfig(ticker="SPY", period="5d", stale_after_seconds=0)
+                    )
+
+        self.assertIsNone(result)
+        sleeps = [c.args[0] for c in mock_sleep.call_args_list]
+        self.assertEqual(sleeps, [2, 4, 5, 5, 5])
+        self.assertEqual(YF_FETCH_MAX_BACKOFF_SECONDS, 60.0)
 
 
 if __name__ == "__main__":
